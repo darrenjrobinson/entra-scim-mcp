@@ -1,13 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
   buildAddGroupMemberPatches,
+  buildCsaPatch,
   buildGroupAttributePatch,
   buildRemoveGroupMemberPatch,
   buildUserPatch,
   GROUP_MEMBER_ADD_CHUNK_SIZE,
 } from "../src/scim/patch.js";
 import { PatchValidationError } from "../src/scim/errors.js";
-import { SCHEMA_PATCH_OP } from "../src/scim/types.js";
+import { SCHEMA_ENTRA_CSA, SCHEMA_PATCH_OP } from "../src/scim/types.js";
 
 describe("buildUserPatch", () => {
   it("wraps operations with PatchOp schema header", () => {
@@ -178,5 +179,60 @@ describe("buildGroupAttributePatch", () => {
       { op: "replace", value: { displayName: "New" } },
     ]);
     expect(body.Operations).toHaveLength(1);
+  });
+});
+
+describe("buildCsaPatch", () => {
+  it("requires at least one operation", () => {
+    expect(() => buildCsaPatch([])).toThrow(PatchValidationError);
+  });
+
+  it("accepts operations targeting a CSA path", () => {
+    const body = buildCsaPatch([
+      { op: "replace", path: `${SCHEMA_ENTRA_CSA}:Engineering.Project`, value: "Apollo" },
+    ]);
+    expect(body.schemas).toEqual([SCHEMA_PATCH_OP]);
+    expect(body.Operations).toHaveLength(1);
+  });
+
+  it("accepts a path-less op whose value is keyed by the CSA urn", () => {
+    const body = buildCsaPatch([
+      {
+        op: "add",
+        value: { [SCHEMA_ENTRA_CSA]: { Engineering: { Project: "Apollo" } } },
+      },
+    ]);
+    expect(body.Operations).toHaveLength(1);
+  });
+
+  it("rejects operations targeting non-CSA attributes", () => {
+    expect(() =>
+      buildCsaPatch([{ op: "remove", path: "mailNickname" }]),
+    ).toThrow(PatchValidationError);
+    expect(() =>
+      buildCsaPatch([{ op: "replace", path: "displayName", value: "x" }]),
+    ).toThrow(PatchValidationError);
+  });
+
+  it("rejects a path-less op whose value mixes in non-CSA keys", () => {
+    expect(() =>
+      buildCsaPatch([
+        {
+          op: "replace",
+          value: {
+            [SCHEMA_ENTRA_CSA]: { Engineering: { Project: "Apollo" } },
+            displayName: "x",
+          },
+        },
+      ]),
+    ).toThrow(PatchValidationError);
+  });
+
+  it("rejects invalid op names", () => {
+    expect(() =>
+      buildCsaPatch([
+        { op: "merge" as never, path: `${SCHEMA_ENTRA_CSA}:Set.Attr`, value: "x" },
+      ]),
+    ).toThrow(PatchValidationError);
   });
 });

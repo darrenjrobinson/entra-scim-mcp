@@ -1,5 +1,6 @@
 import { PatchValidationError } from "./errors.js";
 import {
+  SCHEMA_ENTRA_CSA,
   SCHEMA_ENTRA_USER,
   SCHEMA_PATCH_OP,
   type ScimPatchBody,
@@ -31,6 +32,28 @@ export function buildGroupAttributePatch(
     if (touchesMembers(op)) {
       throw new PatchValidationError(
         `Operation ${idx}: group membership cannot be modified through update_group; use add_group_members or remove_group_member.`,
+      );
+    }
+  }
+  return scimPatch(operations);
+}
+
+export function buildCsaPatch(operations: ScimPatchOperation[]): ScimPatchBody {
+  if (!Array.isArray(operations) || operations.length === 0) {
+    throw new PatchValidationError("At least one PATCH operation is required.");
+  }
+  for (const [idx, op] of operations.entries()) {
+    if (!op || typeof op !== "object") {
+      throw new PatchValidationError(`Operation ${idx} is not an object.`);
+    }
+    if (op.op !== "add" && op.op !== "remove" && op.op !== "replace") {
+      throw new PatchValidationError(
+        `Operation ${idx} has invalid op '${String(op.op)}'.`,
+      );
+    }
+    if (!targetsCsa(op)) {
+      throw new PatchValidationError(
+        `Operation ${idx} must target the CustomSecurityAttributes extension (path starting with "${SCHEMA_ENTRA_CSA}"); use update_user for other attributes.`,
       );
     }
   }
@@ -140,6 +163,21 @@ function touchesMembers(op: ScimPatchOperation): boolean {
   // so a "members" key in the value modifies membership just like path: "members".
   if (op?.value && typeof op.value === "object" && !Array.isArray(op.value)) {
     return Object.keys(op.value).some((key) => key.toLowerCase() === "members");
+  }
+  return false;
+}
+
+function targetsCsa(op: ScimPatchOperation): boolean {
+  const urn = SCHEMA_ENTRA_CSA.toLowerCase();
+  if (op.path) {
+    const lower = op.path.toLowerCase();
+    return lower === urn || lower.startsWith(`${urn}:`) || lower.startsWith(`${urn}.`);
+  }
+  // A path-less op is acceptable only when every key in its value object is
+  // the CSA extension URN, so the op cannot reach other user attributes.
+  if (op.value && typeof op.value === "object" && !Array.isArray(op.value)) {
+    const keys = Object.keys(op.value);
+    return keys.length > 0 && keys.every((key) => key.toLowerCase() === urn);
   }
   return false;
 }

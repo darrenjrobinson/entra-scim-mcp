@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ScimClient } from "../scim/client.js";
 import { wrapTool } from "./util.js";
 import { buildUserFilter } from "../scim/filter.js";
-import { buildUserPatch } from "../scim/patch.js";
+import { buildCsaPatch, buildUserPatch } from "../scim/patch.js";
 import { normalizeListResponse } from "../scim/pagination.js";
 import {
   SCHEMA_ENTERPRISE_USER,
@@ -323,10 +323,11 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
       },
     },
     wrapTool(async (args: { id: string; operations: ScimPatchOperation[] }) => {
+      const body = buildCsaPatch(args.operations);
       await client.request({
         method: "PATCH",
         path: `/users/${encodeURIComponent(args.id)}`,
-        body: { schemas: [SCHEMA_PATCH_OP], Operations: args.operations },
+        body,
       });
       return { ok: true, id: args.id };
     }),
