@@ -1,0 +1,131 @@
+import type { TokenCredential } from "@azure/identity";
+import { ScimError } from "./errors.js";
+import { GRAPH_SCOPE } from "./auth.js";
+import { SCIM_BASE_URL } from "./types.js";
+import { buildQueryString, type QueryParams } from "./query.js";
+
+export type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+
+export interface ScimRequestOptions {
+  method: HttpMethod;
+  path: string;
+  body?: unknown;
+  query?: QueryParams;
+}
+
+export interface ScimClientOptions {
+  credential: TokenCredential;
+  baseUrl?: string;
+  fetcher?: typeof fetch;
+  maxRetries?: number;
+  retryBaseDelayMs?: number;
+}
+
+export class ScimClient {
+  private readonly credential: TokenCredential;
+  private readonly baseUrl: string;
+  private readonly fetcher: typeof fetch;
+  private readonly maxRetries: number;
+  private readonly retryBaseDelayMs: number;
+
+  constructor(options: ScimClientOptions) {
+    this.credential = options.credential;
+    this.baseUrl = options.baseUrl ?? SCIM_BASE_URL;
+    this.fetcher = options.fetcher ?? fetch;
+    this.maxRetries = options.maxRetries ?? 3;
+    this.retryBaseDelayMs = options.retryBaseDelayMs ?? 500;
+  }
+
+  async request<T = unknown>(opts: ScimRequestOptions): Promise<T | undefined> {
+    const url = `${this.baseUrl}${opts.path}${buildQueryString(opts.query)}`;
+    const token = await this.credential.getToken(GRAPH_SCOPE);
+    if (!token) {
+      throw new ScimError({ status: 401, detail: "Credential returned no token." });
+    }
+
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${token.token}`,
+      Accept: "application/json",
+    };
+    let serializedBody: string | undefined;
+    if (opts.body !== undefined) {
+      headers["Content-Type"] = "application/scim+json";
+      serializedBody = JSON.stringify(opts.body);
+    }
+
+    let attempt = 0;
+    while (true) {
+      const response = await this.fetcher(url, {
+        method: opts.method,
+        headers,
+        body: serializedBody,
+      });
+
+      if (response.status === 429 && attempt < this.maxRetries) {
+        const wait = this.parseRetryAfter(response.headers.get("retry-after"), attempt);
+        await sleep(wait);
+        attempt += 1;
+        continue;
+      }
+
+      if (response.status === 204) {
+        return undefined;
+      }
+
+      const text = await response.text();
+      const parsed = safeParseJson(text);
+
+      if (!response.ok) {
+        throw mapScimError(response.status, parsed, text);
+      }
+
+      return parsed as T;
+    }
+  }
+
+  private parseRetryAfter(header: string | null, attempt: number): number {
+    if (header) {
+      const seconds = Number(header);
+      if (Number.isFinite(seconds) && seconds >= 0) {
+        return Math.min(seconds * 1000, 30_000);
+      }
+    }
+    return this.retryBaseDelayMs * 2 ** attempt;
+  }
+}
+
+function safeParseJson(text: string): unknown {
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function mapScimError(httpStatus: number, parsed: unknown, raw: string): ScimError {
+  if (parsed && typeof parsed === "object") {
+    const payload = parsed as Record<string, unknown>;
+    const status = coerceStatus(payload.status, httpStatus);
+    const detail = typeof payload.detail === "string" ? payload.detail : undefined;
+    const scimType = typeof payload.scimType === "string" ? payload.scimType : undefined;
+    return new ScimError({ status, detail, scimType }, parsed);
+  }
+  return new ScimError(
+    { status: httpStatus, detail: raw || `HTTP ${httpStatus}` },
+    raw || undefined,
+  );
+}
+
+function coerceStatus(value: unknown, fallback: number): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return fallback;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
