@@ -133,8 +133,15 @@ function assertAddressFilterShape(path: string, idx: number): void {
 }
 
 function touchesMembers(op: ScimPatchOperation): boolean {
-  if (!op?.path) return false;
-  return /(^|[^a-zA-Z])members(\b|\[|\.)/i.test(op.path);
+  if (op?.path) {
+    return /(^|[^a-zA-Z])members(\b|\[|\.)/i.test(op.path);
+  }
+  // A path-less add/replace applies its value object attribute-by-attribute,
+  // so a "members" key in the value modifies membership just like path: "members".
+  if (op?.value && typeof op.value === "object" && !Array.isArray(op.value)) {
+    return Object.keys(op.value).some((key) => key.toLowerCase() === "members");
+  }
+  return false;
 }
 
 function scimPatch(operations: ScimPatchOperation[]): ScimPatchBody {

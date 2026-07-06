@@ -159,4 +159,24 @@ describe("buildGroupAttributePatch", () => {
     ]);
     expect(body.Operations[0]!.path).toBe("displayName");
   });
+
+  it("rejects a path-less op whose value carries members", () => {
+    expect(() =>
+      buildGroupAttributePatch([
+        { op: "replace", value: { members: [{ value: "u-1" }] } },
+      ]),
+    ).toThrow(PatchValidationError);
+    expect(() =>
+      buildGroupAttributePatch([
+        { op: "add", value: { Members: [{ value: "u-1" }] } },
+      ]),
+    ).toThrow(PatchValidationError);
+  });
+
+  it("allows a path-less op whose value has no members key", () => {
+    const body = buildGroupAttributePatch([
+      { op: "replace", value: { displayName: "New" } },
+    ]);
+    expect(body.Operations).toHaveLength(1);
+  });
 });
