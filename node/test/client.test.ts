@@ -134,6 +134,35 @@ describe("ScimClient", () => {
     expect(fetcher).toHaveBeenCalledTimes(3); // initial + 2 retries
   });
 
+  it("throws when a 2xx response body is not valid JSON", async () => {
+    const fetcher = vi.fn(
+      async () => new Response("<html>gateway error</html>", { status: 200 }),
+    );
+    const client = new ScimClient({
+      credential: fakeCredential(),
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    const err = await client
+      .request({ method: "GET", path: "/users" })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ScimError);
+    expect((err as ScimError).status).toBe(200);
+    expect((err as ScimError).detail).toContain("not valid JSON");
+    expect((err as ScimError).raw).toContain("gateway error");
+  });
+
+  it("returns undefined for a 2xx with an empty body", async () => {
+    const fetcher = vi.fn(async () => new Response("", { status: 200 }));
+    const client = new ScimClient({
+      credential: fakeCredential(),
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    const result = await client.request({ method: "GET", path: "/users/u-1" });
+    expect(result).toBeUndefined();
+  });
+
   it("falls back to HTTP status when error body is not SCIM JSON", async () => {
     const fetcher = vi.fn(
       async () => new Response("Internal Server Error", { status: 500 }),

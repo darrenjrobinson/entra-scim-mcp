@@ -73,13 +73,27 @@ export class ScimClient {
       }
 
       const text = await response.text();
-      const parsed = safeParseJson(text);
 
       if (!response.ok) {
-        throw mapScimError(response.status, parsed, text);
+        throw mapScimError(response.status, safeParseJson(text), text);
       }
 
-      return parsed as T;
+      if (!text) {
+        return undefined;
+      }
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        // A 2xx with an unparseable body (proxy HTML page, truncated response)
+        // must not be mistaken for a valid empty result.
+        throw new ScimError(
+          {
+            status: response.status,
+            detail: `Received HTTP ${response.status} but the response body is not valid JSON.`,
+          },
+          text.slice(0, 1000),
+        );
+      }
     }
   }
 
