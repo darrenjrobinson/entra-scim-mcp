@@ -174,6 +174,21 @@ describe("buildGroupAttributePatch", () => {
     ).toThrow(PatchValidationError);
   });
 
+  it("rejects a path-less op whose value carries a URN-qualified members key", () => {
+    expect(() =>
+      buildGroupAttributePatch([
+        {
+          op: "add",
+          value: {
+            "urn:ietf:params:scim:schemas:core:2.0:Group:members": [
+              { value: "u-1" },
+            ],
+          },
+        },
+      ]),
+    ).toThrow(PatchValidationError);
+  });
+
   it("allows a path-less op whose value has no members key", () => {
     const body = buildGroupAttributePatch([
       { op: "replace", value: { displayName: "New" } },
