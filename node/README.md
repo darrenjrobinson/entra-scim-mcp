@@ -24,6 +24,34 @@ Before this server can talk to your tenant, complete the one-time setup in the [
 
 Every SCIM API call is billed — this server does not batch beyond what the API requires.
 
+## Try it without an Entra tenant
+
+The package ships a local mock of the Entra SCIM API (`entra-scim-mock-server`) so you can drive every tool with zero Azure setup and zero API billing:
+
+```bash
+# shell 1 — start the mock (seeds a small demo tenant)
+npx -y --package @darrenjrobinson/entra-scim-mcp entra-scim-mock-server
+```
+
+Then point the MCP server at it:
+
+```json
+{
+  "mcpServers": {
+    "entra-scim-mock": {
+      "command": "npx",
+      "args": ["-y", "@darrenjrobinson/entra-scim-mcp"],
+      "env": {
+        "ENTRA_SCIM_BASE_URL": "http://127.0.0.1:8990",
+        "ENTRA_SCIM_STATIC_TOKEN": "dev-token"
+      }
+    }
+  }
+}
+```
+
+Mock flags: `--port`, `--token`, `--seed <file.json>`, `--no-seed`, `--capture <file.jsonl>` (log every request/response), `--validator-compat` (RFC-standard behavior for the [Microsoft SCIM Validator](https://scimvalidator.microsoft.com) — see [docs/scim-validator.md](docs/scim-validator.md)).
+
 ## Install / run
 
 The server is a stdio MCP server, designed to be launched by your MCP client (Claude Desktop, Claude Code, etc.).
@@ -43,6 +71,29 @@ Required environment:
 | `ENTRA_CLIENT_CERT_PASSWORD` | optional | Password if the PEM is encrypted |
 
 Set exactly one of `ENTRA_CLIENT_SECRET` or `ENTRA_CLIENT_CERT_PATH`.
+
+### Development / testing environment variables
+
+| Var | Description |
+| --- | --- |
+| `ENTRA_SCIM_BASE_URL` | Override the SCIM base URL (default `https://graph.microsoft.com/rp/scim`). Point it at the local mock. |
+| `ENTRA_SCIM_STATIC_TOKEN` | Use a fixed bearer token instead of Azure AD. **Guardrails:** requires `ENTRA_SCIM_BASE_URL`, refuses any `*.microsoft.com` / `*.microsoft.us` host, warns on non-loopback hosts, and cannot be combined with a real credential. Tenant/client IDs are not required in this mode. |
+| `ENTRA_SCIM_DRY_RUN` | Set to `1`: tools run all client-side validation, then return the exact request that would have been sent instead of sending it. No token is acquired — works with zero credential config. |
+
+Dry-run results come back as a successful payload:
+
+```json
+{
+  "dryRun": true,
+  "request": {
+    "method": "DELETE",
+    "url": "https://graph.microsoft.com/rp/scim/users/u-1",
+    "headers": { "Accept": "application/json" }
+  }
+}
+```
+
+Multi-request tools (e.g. `add_group_members` beyond 20 ids) surface only their first chunked request in dry-run.
 
 ### Claude Desktop config
 
@@ -89,13 +140,13 @@ For production, swap the secret for a certificate:
 | `update_user` | PATCH a user; blocks `remove` of mailNickname and enforces `[type eq "work"]` on address paths. |
 | `deprovision_user` | DELETE a user. |
 | `update_user_lifecycle` | Set lifecycle attrs (e.g. `employeeLeaveDateTime`). Requires `User-LifeCycleInfo.ReadWrite.All`. |
-| `get_user_custom_security_attributes` | Read a user's CSA extension only. |
+| `get_user_custom_security_attributes` | Read a user's CSA extension only. Pass `attributeSets` for the documented set-qualified projection. |
 | `update_user_custom_security_attributes` | PATCH CSAs on a user. |
 | `list_groups` | List groups with the API's restricted filter set. |
 | `get_group` | Read a single group (members are NOT returned — use `list_groups` with a `members.value` filter). |
 | `create_group` | POST a group. Sets `mailEnabled`, `securityEnabled`, `mailNickname`, `description` via the Entra extension. |
 | `update_group` | PATCH group attributes only (membership ops are rejected here). |
-| `add_group_members` | Add ≥1 users to a group — auto-chunks at 20 ids per PATCH (API cap), one Operation per PATCH. |
+| `add_group_members` | Add ≥1 users to a group — auto-chunks at 20 ids per PATCH (API cap), one Operation per PATCH. On a mid-sequence failure it reports `addedMemberIds` / `failedMemberIds` / `notAttemptedMemberIds` so partial writes are never silent. |
 | `remove_group_member` | Remove a single user from a group (the API allows only one removal per PATCH, with no other ops). |
 | `delete_group` | DELETE a group. |
 
@@ -118,9 +169,11 @@ cd node
 npm install
 npm test
 npm run build
+npm run mock            # run the local mock server (tsx, no build needed)
+npm run mock:capture    # mock in validator-compat mode, capturing traffic to captures/
 ```
 
-The server has no test dependency on a real tenant — unit tests cover the filter, patch, query, and client layers with a mocked `fetch`.
+The server has no test dependency on a real tenant. Unit tests cover the filter, patch, query, and client layers; integration tests boot the in-process mock server and drive **every MCP tool end-to-end** over real HTTP (`test/integration/`). Captured [SCIM Validator](docs/scim-validator.md) sessions convert into replay fixtures with `npm run fixtures:convert`.
 
 ## License
 
