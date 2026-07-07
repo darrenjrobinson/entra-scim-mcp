@@ -19,6 +19,8 @@ export interface ScimClientOptions {
   fetcher?: typeof fetch;
   maxRetries?: number;
   retryBaseDelayMs?: number;
+  /** Per-attempt timeout; a stalled connection otherwise blocks the tool call indefinitely. */
+  timeoutMs?: number;
 }
 
 export class ScimClient {
@@ -27,6 +29,7 @@ export class ScimClient {
   private readonly fetcher: typeof fetch;
   private readonly maxRetries: number;
   private readonly retryBaseDelayMs: number;
+  private readonly timeoutMs: number;
 
   constructor(options: ScimClientOptions) {
     this.credential = options.credential;
@@ -34,6 +37,7 @@ export class ScimClient {
     this.fetcher = options.fetcher ?? fetch;
     this.maxRetries = options.maxRetries ?? 3;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? 500;
+    this.timeoutMs = options.timeoutMs ?? 60_000;
   }
 
   async request<T = unknown>(opts: ScimRequestOptions): Promise<T | undefined> {
@@ -55,11 +59,26 @@ export class ScimClient {
 
     let attempt = 0;
     while (true) {
-      const response = await this.fetcher(url, {
-        method: opts.method,
-        headers,
-        body: serializedBody,
-      });
+      let response: Response;
+      try {
+        response = await this.fetcher(url, {
+          method: opts.method,
+          headers,
+          body: serializedBody,
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          (err.name === "TimeoutError" || err.name === "AbortError")
+        ) {
+          throw new ScimError({
+            status: 408,
+            detail: `Request to ${url} timed out after ${this.timeoutMs} ms.`,
+          });
+        }
+        throw err;
+      }
 
       if (response.status === 429 && attempt < this.maxRetries) {
         const wait = this.parseRetryAfter(response.headers.get("retry-after"), attempt);

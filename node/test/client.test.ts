@@ -163,6 +163,41 @@ describe("ScimClient", () => {
     expect(result).toBeUndefined();
   });
 
+  it("aborts a stalled request after timeoutMs and maps it to ScimError 408", async () => {
+    const fetcher = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal!.addEventListener("abort", () =>
+            reject(init.signal!.reason),
+          );
+        }),
+    );
+    const client = new ScimClient({
+      credential: fakeCredential(),
+      fetcher: fetcher as unknown as typeof fetch,
+      timeoutMs: 20,
+    });
+
+    const err = await client
+      .request({ method: "GET", path: "/users" })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ScimError);
+    expect((err as ScimError).status).toBe(408);
+    expect((err as ScimError).detail).toContain("timed out after 20 ms");
+  });
+
+  it("passes an abort signal to every attempt", async () => {
+    const fetcher = vi.fn(async () => jsonResponse(200, { ok: true }));
+    const client = new ScimClient({
+      credential: fakeCredential(),
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    await client.request({ method: "GET", path: "/users" });
+    const init = fetcher.mock.calls[0]![1] as RequestInit;
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it("falls back to HTTP status when error body is not SCIM JSON", async () => {
     const fetcher = vi.fn(
       async () => new Response("Internal Server Error", { status: 500 }),
