@@ -1,5 +1,6 @@
 import {
   ConfigError,
+  DryRunRequest,
   FilterValidationError,
   PatchValidationError,
   ScimError,
@@ -71,6 +72,18 @@ function successResult(value: unknown): ToolResult {
 }
 
 function errorResult(err: unknown): ToolResult {
+  if (err instanceof DryRunRequest) {
+    // Not an error: the tool ran all validation and reports the request it
+    // would have sent.
+    const payload: Record<string, unknown> = {
+      dryRun: true,
+      request: err.request as unknown as Record<string, unknown>,
+    };
+    return {
+      content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+      structuredContent: payload,
+    };
+  }
   if (err instanceof ToolError) {
     return {
       content: [{ type: "text", text: JSON.stringify(err.payload, null, 2) }],

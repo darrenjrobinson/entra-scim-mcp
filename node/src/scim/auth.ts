@@ -20,6 +20,12 @@ export interface LoadAuthOptions {
    * configured, so the guardrail can refuse to send it to a real endpoint.
    */
   baseUrl?: string;
+  /**
+   * When true and no credential env is configured, return a placeholder
+   * credential so dry-run works with zero config. The token never leaves the
+   * process — dry-run short-circuits before token acquisition.
+   */
+  dryRun?: boolean;
 }
 
 /**
@@ -41,6 +47,19 @@ export function loadAuthFromEnv(
   const staticToken = env.ENTRA_SCIM_STATIC_TOKEN?.trim();
   if (staticToken) {
     return loadStaticAuth(env, staticToken, opts.baseUrl);
+  }
+
+  if (
+    opts.dryRun &&
+    !env.ENTRA_CLIENT_SECRET?.trim() &&
+    !env.ENTRA_CLIENT_CERT_PATH?.trim()
+  ) {
+    return {
+      tenantId: env.ENTRA_TENANT_ID?.trim() || "dry-run",
+      clientId: env.ENTRA_CLIENT_ID?.trim() || "dry-run",
+      mode: "static",
+      credential: new StaticTokenCredential("dry-run"),
+    };
   }
 
   const tenantId = required(env.ENTRA_TENANT_ID, "ENTRA_TENANT_ID");

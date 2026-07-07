@@ -1,5 +1,5 @@
 import type { TokenCredential } from "@azure/identity";
-import { ScimError } from "./errors.js";
+import { DryRunRequest, ScimError } from "./errors.js";
 import { GRAPH_SCOPE } from "./auth.js";
 import { SCIM_BASE_URL } from "./types.js";
 import { buildQueryString, type QueryParams } from "./query.js";
@@ -21,6 +21,8 @@ export interface ScimClientOptions {
   retryBaseDelayMs?: number;
   /** Per-attempt timeout; a stalled connection otherwise blocks the tool call indefinitely. */
   timeoutMs?: number;
+  /** When true, throw DryRunRequest instead of sending — no token is acquired. */
+  dryRun?: boolean;
 }
 
 export class ScimClient {
@@ -30,6 +32,7 @@ export class ScimClient {
   private readonly maxRetries: number;
   private readonly retryBaseDelayMs: number;
   private readonly timeoutMs: number;
+  private readonly dryRun: boolean;
 
   constructor(options: ScimClientOptions) {
     this.credential = options.credential;
@@ -38,10 +41,26 @@ export class ScimClient {
     this.maxRetries = options.maxRetries ?? 3;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? 500;
     this.timeoutMs = options.timeoutMs ?? 60_000;
+    this.dryRun = options.dryRun ?? false;
   }
 
   async request<T = unknown>(opts: ScimRequestOptions): Promise<T | undefined> {
     const url = `${this.baseUrl}${opts.path}${buildQueryString(opts.query)}`;
+
+    if (this.dryRun) {
+      // Before token acquisition: dry-run must never contact Azure AD.
+      const dryHeaders: Record<string, string> = { Accept: "application/json" };
+      if (opts.body !== undefined) {
+        dryHeaders["Content-Type"] = "application/scim+json";
+      }
+      throw new DryRunRequest({
+        method: opts.method,
+        url,
+        headers: dryHeaders,
+        body: opts.body,
+      });
+    }
+
     const token = await this.credential.getToken(GRAPH_SCOPE);
     if (!token) {
       throw new ScimError({ status: 401, detail: "Credential returned no token." });

@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ScimClient } from "../scim/client.js";
 import { joinAttributes, ToolError, wrapTool } from "./util.js";
 import { buildGroupFilter } from "../scim/filter.js";
-import { ScimError } from "../scim/errors.js";
+import { DryRunRequest, ScimError } from "../scim/errors.js";
 import {
   buildAddGroupMemberPatches,
   buildGroupAttributePatch,
@@ -206,6 +206,7 @@ export function registerGroupTools(server: McpServer, client: ScimClient): void 
             body,
           });
         } catch (err) {
+          if (err instanceof DryRunRequest) throw err;
           // Earlier chunks are already committed in Entra — the agent must
           // know that, or it will report total failure after a partial write.
           throw new ToolError({

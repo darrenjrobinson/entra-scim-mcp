@@ -30,6 +30,29 @@ export class ScimError extends Error {
   }
 }
 
+export interface DryRunRequestInfo {
+  method: string;
+  url: string;
+  /** Outbound headers minus Authorization — the token is never acquired. */
+  headers: Record<string, string>;
+  body?: unknown;
+}
+
+/**
+ * Thrown by ScimClient in dry-run mode instead of sending the request. Not an
+ * error in the usual sense: wrapTool converts it into a successful tool result
+ * describing the request that would have been sent.
+ */
+export class DryRunRequest extends Error {
+  readonly request: DryRunRequestInfo;
+
+  constructor(request: DryRunRequestInfo) {
+    super(`Dry run: ${request.method} ${request.url}`);
+    this.name = "DryRunRequest";
+    this.request = request;
+  }
+}
+
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);

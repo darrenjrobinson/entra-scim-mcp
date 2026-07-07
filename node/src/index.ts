@@ -7,8 +7,9 @@ import { createServer } from "./server.js";
 
 async function main(): Promise<void> {
   const baseUrl = process.env.ENTRA_SCIM_BASE_URL?.trim() || SCIM_BASE_URL;
-  const auth = loadAuthFromEnv(process.env, { baseUrl });
-  const client = new ScimClient({ credential: auth.credential, baseUrl });
+  const dryRun = process.env.ENTRA_SCIM_DRY_RUN === "1";
+  const auth = loadAuthFromEnv(process.env, { baseUrl, dryRun });
+  const client = new ScimClient({ credential: auth.credential, baseUrl, dryRun });
   const { server } = createServer({ auth, client });
   const transport = new StdioServerTransport();
   await server.connect(transport);
