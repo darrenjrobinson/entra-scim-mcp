@@ -4,8 +4,24 @@ import {
   type FilterClause,
   type ValidatedFilterClause,
 } from "../scim/filter.js";
-import { SCHEMA_ENTRA_USER } from "../scim/types.js";
+import {
+  SCHEMA_ENTERPRISE_USER,
+  SCHEMA_ENTRA_CSA,
+  SCHEMA_ENTRA_GROUP,
+  SCHEMA_ENTRA_USER,
+  SCHEMA_GROUP_CORE,
+  SCHEMA_USER_CORE,
+} from "../scim/types.js";
 import type { StoredGroup, StoredUser } from "./store.js";
+
+const KNOWN_URNS = [
+  SCHEMA_ENTERPRISE_USER,
+  SCHEMA_ENTRA_USER,
+  SCHEMA_ENTRA_CSA,
+  SCHEMA_ENTRA_GROUP,
+  SCHEMA_USER_CORE,
+  SCHEMA_GROUP_CORE,
+];
 
 /**
  * Parse the restricted Entra filter grammar — `attr (eq|ew) "value"` clauses
@@ -65,13 +81,12 @@ export function userMatches(
 ): boolean {
   return clauses.every((clause) => {
     const attr = clause.attr;
-    if (attr === "groups.value") {
+    if (attr.toLowerCase() === "groups.value") {
       return ctx
         .groupIdsOfUser(user.id)
         .some((gid) => equalsCi(gid, clause.value));
     }
-    const actual = userAttrValue(user, attr);
-    return compare(actual, clause);
+    return compare(resolveAttrValue(user, attr), clause);
   });
 }
 
@@ -80,23 +95,55 @@ export function groupMatches(
   clauses: ValidatedFilterClause[],
 ): boolean {
   return clauses.every((clause) => {
-    if (clause.attr === "members.value") {
+    if (clause.attr.toLowerCase() === "members.value") {
       return group.members.some((m) => equalsCi(m.value, clause.value));
     }
-    const actual = group[clause.attr];
-    return compare(typeof actual === "string" ? actual : undefined, clause);
+    return compare(resolveAttrValue(group, clause.attr), clause);
   });
 }
 
-function userAttrValue(user: StoredUser, canonicalAttr: string): string | undefined {
-  if (canonicalAttr === `${SCHEMA_ENTRA_USER}:mailNickname`) {
-    const ext = user[SCHEMA_ENTRA_USER];
-    return ext && typeof ext === "object"
-      ? (ext as { mailNickname?: string }).mailNickname
-      : undefined;
+/**
+ * Resolve a (possibly URN-qualified, possibly dotted) attribute path to a
+ * string value, case-insensitively. Also serves the validator-compat mode's
+ * permissive filters, so it handles arbitrary paths, not just the allow-list.
+ */
+function resolveAttrValue(
+  resource: Record<string, unknown>,
+  attr: string,
+): string | undefined {
+  let container: unknown = resource;
+  let rest = attr;
+  const lower = attr.toLowerCase();
+  for (const urn of KNOWN_URNS) {
+    const u = urn.toLowerCase();
+    if (lower === u || lower.startsWith(`${u}:`) || lower.startsWith(`${u}.`)) {
+      if (u === SCHEMA_USER_CORE.toLowerCase() || u === SCHEMA_GROUP_CORE.toLowerCase()) {
+        rest = attr.slice(urn.length + 1);
+      } else {
+        container = findValueCi(resource, urn);
+        rest = lower === u ? "" : attr.slice(urn.length + 1);
+      }
+      break;
+    }
   }
-  const value = user[canonicalAttr];
-  return typeof value === "string" ? value : undefined;
+  for (const segment of rest.split(".").filter(Boolean)) {
+    if (!container || typeof container !== "object" || Array.isArray(container)) {
+      return undefined;
+    }
+    container = findValueCi(container as Record<string, unknown>, segment);
+  }
+  if (typeof container === "string") return container;
+  if (typeof container === "boolean" || typeof container === "number") {
+    return String(container);
+  }
+  return undefined;
+}
+
+function findValueCi(obj: Record<string, unknown>, name: string): unknown {
+  if (name in obj) return obj[name];
+  const lower = name.toLowerCase();
+  const key = Object.keys(obj).find((k) => k.toLowerCase() === lower);
+  return key ? obj[key] : undefined;
 }
 
 function compare(
