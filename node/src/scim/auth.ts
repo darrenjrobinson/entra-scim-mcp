@@ -54,14 +54,6 @@ export function loadAuthFromEnv(env: NodeJS.ProcessEnv = process.env): AuthConfi
   );
 }
 
-export async function getAccessToken(credential: TokenCredential): Promise<string> {
-  const token = await credential.getToken(GRAPH_SCOPE);
-  if (!token) {
-    throw new ConfigError("Failed to acquire Graph access token (credential returned null).");
-  }
-  return token.token;
-}
-
 function required(value: string | undefined, name: string): string {
   const v = value?.trim();
   if (!v) throw new ConfigError(`Missing required env var: ${name}`);
