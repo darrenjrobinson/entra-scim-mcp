@@ -38,6 +38,21 @@ function okUser(): Response {
   });
 }
 
+describe("projection params", () => {
+  it("omits attributes/excludedAttributes entirely for empty arrays", async () => {
+    const fetcher = vi.fn(async () => okUser());
+    const mcp = await connectedClient(fetcher as unknown as typeof fetch);
+
+    await mcp.callTool({
+      name: "get_user",
+      arguments: { id: "u-1", attributes: [], excludedAttributes: [] },
+    });
+
+    const url = String(fetcher.mock.calls[0]![0]);
+    expect(url).toBe("https://graph.microsoft.com/rp/scim/users/u-1");
+  });
+});
+
 describe("get_user_custom_security_attributes", () => {
   it("projects set-qualified CSA attributes when attributeSets is given", async () => {
     const fetcher = vi.fn(async () => okUser());

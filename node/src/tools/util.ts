@@ -34,6 +34,15 @@ export class ToolError extends Error {
   }
 }
 
+/**
+ * Join attribute names for a projection query param. An empty array must
+ * become undefined — `attributes=` with no value trips the API's strict
+ * query-string parser.
+ */
+export function joinAttributes(names: string[] | undefined): string | undefined {
+  return names?.length ? names.join(",") : undefined;
+}
+
 export function wrapTool<Args>(
   handler: (args: Args) => Promise<unknown>,
 ): ToolHandler<Args> {

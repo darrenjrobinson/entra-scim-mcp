@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ScimClient } from "../scim/client.js";
-import { wrapTool } from "./util.js";
+import { joinAttributes, wrapTool } from "./util.js";
 import { buildUserFilter } from "../scim/filter.js";
 import { buildCsaPatch, buildUserPatch } from "../scim/patch.js";
 import { normalizeListResponse } from "../scim/pagination.js";
@@ -89,8 +89,8 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
         path: "/users",
         query: {
           filter: buildUserFilter(args.filter),
-          attributes: args.attributes?.join(","),
-          excludedAttributes: args.excludedAttributes?.join(","),
+          attributes: joinAttributes(args.attributes),
+          excludedAttributes: joinAttributes(args.excludedAttributes),
           count: args.count,
           cursor: args.cursor,
         },
@@ -119,8 +119,8 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
         method: "GET",
         path: `/users/${encodeURIComponent(args.id)}`,
         query: {
-          attributes: args.attributes?.join(","),
-          excludedAttributes: args.excludedAttributes?.join(","),
+          attributes: joinAttributes(args.attributes),
+          excludedAttributes: joinAttributes(args.excludedAttributes),
         },
       });
     }),
@@ -226,7 +226,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
     {
       title: "Update user",
       description:
-        "PATCH a user. Operations are validated: 'remove' of mailNickname is blocked; complex multi-valued paths must use [type eq \"work\"].",
+        "PATCH a user. Operations are validated: removing mailNickname (or nulling it out) is blocked, and addresses[...] paths must use exactly [type eq \"work\"]. Other complex multi-valued paths (e.g. emails[type eq \"work\" and primary eq true].value) are passed through as-is.",
       inputSchema: {
         id: z.string().min(1),
         operations: z.array(patchOpSchema).min(1),

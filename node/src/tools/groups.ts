@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ScimClient } from "../scim/client.js";
-import { ToolError, wrapTool } from "./util.js";
+import { joinAttributes, ToolError, wrapTool } from "./util.js";
 import { buildGroupFilter } from "../scim/filter.js";
 import { ScimError } from "../scim/errors.js";
 import {
@@ -58,8 +58,8 @@ export function registerGroupTools(server: McpServer, client: ScimClient): void 
         path: "/groups",
         query: {
           filter: buildGroupFilter(args.filter),
-          attributes: args.attributes?.join(","),
-          excludedAttributes: args.excludedAttributes?.join(","),
+          attributes: joinAttributes(args.attributes),
+          excludedAttributes: joinAttributes(args.excludedAttributes),
           count: args.count,
           cursor: args.cursor,
         },
@@ -89,8 +89,8 @@ export function registerGroupTools(server: McpServer, client: ScimClient): void 
         method: "GET",
         path: `/groups/${encodeURIComponent(args.id)}`,
         query: {
-          attributes: args.attributes?.join(","),
-          excludedAttributes: args.excludedAttributes?.join(","),
+          attributes: joinAttributes(args.attributes),
+          excludedAttributes: joinAttributes(args.excludedAttributes),
         },
       });
     }),
