@@ -20,6 +20,22 @@ export function buildQueryString(params: QueryParams | undefined): string {
   return parts.length ? `?${parts.join("&")}` : "";
 }
 
+/**
+ * Server-side counterpart of the whitespace rule, for a raw (still
+ * percent-encoded) query string: any whitespace — literal or encoded —
+ * immediately around an "=" must be rejected with a 400, exactly like the
+ * real API. Used by the mock server on req.url before decoding.
+ */
+export function assertRawQueryHasNoWhitespaceAroundEquals(rawQuery: string): void {
+  const encodedWs = "(?:%09|%0A|%0D|%20)";
+  const around = new RegExp(`(?:\\s|\\+|${encodedWs})=|=(?:\\s|\\+|${encodedWs})`, "i");
+  if (around.test(rawQuery)) {
+    throw new Error(
+      'Whitespace (encoded or unencoded) around "=" in the query string is not allowed (Entra SCIM API constraint).',
+    );
+  }
+}
+
 function assertNoSurroundingWhitespace(label: string, s: string): void {
   if (s.length === 0) return;
   if (/^\s|\s$/.test(s)) {

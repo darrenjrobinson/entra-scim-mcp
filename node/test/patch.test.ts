@@ -6,6 +6,8 @@ import {
   buildRemoveGroupMemberPatch,
   buildUserPatch,
   GROUP_MEMBER_ADD_CHUNK_SIZE,
+  validateGroupPatchBody,
+  validateUserPatchBody,
 } from "../src/scim/patch.js";
 import { PatchValidationError } from "../src/scim/errors.js";
 import { SCHEMA_ENTRA_CSA, SCHEMA_PATCH_OP } from "../src/scim/types.js";
@@ -327,6 +329,115 @@ describe("buildCsaPatch", () => {
       buildCsaPatch([
         { op: "merge" as never, path: `${SCHEMA_ENTRA_CSA}:Set.Attr`, value: "x" },
       ]),
+    ).toThrow(PatchValidationError);
+  });
+});
+
+describe("validateUserPatchBody", () => {
+  const envelope = (ops: unknown) => ({
+    schemas: [SCHEMA_PATCH_OP],
+    Operations: ops,
+  });
+
+  it("accepts a valid body and returns the operations", () => {
+    const ops = validateUserPatchBody(
+      envelope([{ op: "replace", path: "displayName", value: "New" }]),
+    );
+    expect(ops).toHaveLength(1);
+  });
+
+  it("accepts a lowercase operations key (documented examples use both)", () => {
+    const ops = validateUserPatchBody({
+      schemas: [SCHEMA_PATCH_OP],
+      operations: [{ op: "replace", path: "displayName", value: "New" }],
+    });
+    expect(ops).toHaveLength(1);
+  });
+
+  it("rejects a body without the PatchOp schema", () => {
+    expect(() =>
+      validateUserPatchBody({
+        schemas: ["urn:something:else"],
+        Operations: [{ op: "replace", path: "displayName", value: "x" }],
+      }),
+    ).toThrow(PatchValidationError);
+  });
+
+  it("rejects an empty Operations array", () => {
+    expect(() => validateUserPatchBody(envelope([]))).toThrow(
+      PatchValidationError,
+    );
+  });
+
+  it("applies the user op rules (mailNickname removal)", () => {
+    expect(() =>
+      validateUserPatchBody(envelope([{ op: "remove", path: "mailNickname" }])),
+    ).toThrow(PatchValidationError);
+  });
+});
+
+describe("validateGroupPatchBody", () => {
+  const envelope = (ops: unknown) => ({
+    schemas: [SCHEMA_PATCH_OP],
+    Operations: ops,
+  });
+  const memberValues = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ value: `u-${i}` }));
+
+  it("accepts attribute-only operations, including several at once", () => {
+    const ops = validateGroupPatchBody(
+      envelope([
+        { op: "replace", path: "displayName", value: "New" },
+        { op: "replace", path: "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:Group:description", value: "d" },
+      ]),
+    );
+    expect(ops).toHaveLength(2);
+  });
+
+  it("accepts a single member add of up to 20 members", () => {
+    const ops = validateGroupPatchBody(
+      envelope([{ op: "add", path: "members", value: memberValues(20) }]),
+    );
+    expect(ops).toHaveLength(1);
+  });
+
+  it("rejects a member add above the 20-member cap", () => {
+    expect(() =>
+      validateGroupPatchBody(
+        envelope([{ op: "add", path: "members", value: memberValues(21) }]),
+      ),
+    ).toThrow(PatchValidationError);
+  });
+
+  it("rejects membership combined with other operations", () => {
+    expect(() =>
+      validateGroupPatchBody(
+        envelope([
+          { op: "add", path: "members", value: memberValues(1) },
+          { op: "replace", path: "displayName", value: "New" },
+        ]),
+      ),
+    ).toThrow(PatchValidationError);
+  });
+
+  it("accepts a single-member remove in the documented path form", () => {
+    const ops = validateGroupPatchBody(
+      envelope([{ op: "remove", path: 'members[value eq "u-1"]' }]),
+    );
+    expect(ops).toHaveLength(1);
+  });
+
+  it("rejects a remove that does not name exactly one member", () => {
+    expect(() =>
+      validateGroupPatchBody(envelope([{ op: "remove", path: "members" }])),
+    ).toThrow(PatchValidationError);
+  });
+
+  it("rejects replace on members", () => {
+    expect(() =>
+      validateGroupPatchBody(
+        envelope([{ op: "replace", path: "members", value: memberValues(1) }]),
+      ),
     ).toThrow(PatchValidationError);
   });
 });

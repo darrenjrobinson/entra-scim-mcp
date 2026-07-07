@@ -114,7 +114,7 @@ export function buildRemoveGroupMemberPatch(memberId: string): ScimPatchBody {
   ]);
 }
 
-function validateUserOperation(
+export function validateUserOperation(
   op: ScimPatchOperation,
   idx: number,
 ): ScimPatchOperation {
@@ -187,7 +187,7 @@ function assertAddressFilterShape(path: string, idx: number): void {
 
 const MEMBERS_ATTR_PATTERN = /(^|[^a-zA-Z])members(\b|\[|\.)/i;
 
-function touchesMembers(op: ScimPatchOperation): boolean {
+export function touchesMembers(op: ScimPatchOperation): boolean {
   if (op?.path) {
     return MEMBERS_ATTR_PATTERN.test(op.path);
   }
@@ -227,6 +227,112 @@ function targetsCsa(op: ScimPatchOperation): boolean {
     );
   }
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Whole-body validation of *incoming* PATCH payloads. Used by the mock server
+// so it enforces exactly the constraints the client-side builders above
+// guarantee on outgoing requests — one source of truth for the API's rules.
+// ---------------------------------------------------------------------------
+
+/** Validate a parsed PATCH body against the user PATCH constraints. */
+export function validateUserPatchBody(body: unknown): ScimPatchOperation[] {
+  const ops = parsePatchEnvelope(body);
+  ops.forEach((op, idx) => validateUserOperation(op, idx));
+  return ops;
+}
+
+/**
+ * Validate a parsed PATCH body against the group PATCH constraints:
+ * membership changes must be the only operation in the call, adds are capped
+ * at 20 members per PATCH, and removals must name exactly one member.
+ */
+export function validateGroupPatchBody(body: unknown): ScimPatchOperation[] {
+  const ops = parsePatchEnvelope(body);
+  for (const [idx, op] of ops.entries()) {
+    if (!op || typeof op !== "object") {
+      throw new PatchValidationError(`Operation ${idx} is not an object.`);
+    }
+    if (op.op !== "add" && op.op !== "remove" && op.op !== "replace") {
+      throw new PatchValidationError(
+        `Operation ${idx} has invalid op '${String(op.op)}'.`,
+      );
+    }
+  }
+
+  const memberOps = ops.filter((op) => touchesMembers(op));
+  if (memberOps.length === 0) return ops;
+
+  if (ops.length > 1) {
+    throw new PatchValidationError(
+      "Group membership changes must be the only operation in a PATCH call (Entra SCIM API constraint).",
+    );
+  }
+  const op = memberOps[0]!;
+  if (op.op === "remove") {
+    const path = op.path ?? "";
+    if (!/^members\[value eq "(?:[^"\\]|\\.)+"\]$/i.test(path.trim())) {
+      throw new PatchValidationError(
+        'Member removal must use the members[value eq "<userId>"] path form, one member per PATCH (Entra SCIM API constraint).',
+      );
+    }
+    return ops;
+  }
+  if (op.op === "replace") {
+    throw new PatchValidationError(
+      "Group membership supports only 'add' and 'remove' operations (Entra SCIM API constraint).",
+    );
+  }
+  const members = memberAddValues(op);
+  if (!Array.isArray(members) || members.length === 0) {
+    throw new PatchValidationError(
+      "Membership 'add' requires a non-empty array of { value: <userId> } entries.",
+    );
+  }
+  if (members.length > GROUP_MEMBER_ADD_CHUNK_SIZE) {
+    throw new PatchValidationError(
+      `At most ${GROUP_MEMBER_ADD_CHUNK_SIZE} members can be added per PATCH call (Entra SCIM API constraint).`,
+    );
+  }
+  return ops;
+}
+
+function memberAddValues(op: ScimPatchOperation): unknown {
+  if (op.path) return op.value;
+  // Path-less add: the members array sits under a (possibly URN-qualified)
+  // "members" key in the value object.
+  if (op.value && typeof op.value === "object" && !Array.isArray(op.value)) {
+    for (const [key, value] of Object.entries(op.value)) {
+      if (MEMBERS_ATTR_PATTERN.test(key)) return value;
+    }
+  }
+  return op.value;
+}
+
+function parsePatchEnvelope(body: unknown): ScimPatchOperation[] {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new PatchValidationError("PATCH body must be a JSON object.");
+  }
+  const record = body as Record<string, unknown>;
+  const schemas = record.schemas;
+  if (
+    !Array.isArray(schemas) ||
+    !schemas.some(
+      (s) => typeof s === "string" && s.toLowerCase() === SCHEMA_PATCH_OP.toLowerCase(),
+    )
+  ) {
+    throw new PatchValidationError(
+      `PATCH body schemas must include ${SCHEMA_PATCH_OP}.`,
+    );
+  }
+  // The documented examples use both "Operations" and "operations".
+  const rawOps = record.Operations ?? record.operations;
+  if (!Array.isArray(rawOps) || rawOps.length === 0) {
+    throw new PatchValidationError(
+      "PATCH body must contain a non-empty Operations array.",
+    );
+  }
+  return rawOps as ScimPatchOperation[];
 }
 
 function scimPatch(operations: ScimPatchOperation[]): ScimPatchBody {
