@@ -6,7 +6,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "entra-scim-mcp": "./dist/index.js"
+    "entra-scim-mcp": "./dist/index.js",
+    "entra-scim-mock-server": "./dist/mock/cli.js"
   },
   "files": [
     "dist",
@@ -19,6 +20,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
+    "mock": "tsx src/mock/cli.ts",
+    "mock:capture": "tsx src/mock/cli.ts --validator-compat --capture captures/validator-session.jsonl",
+    "fixtures:convert": "tsx scripts/captures-to-fixtures.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
