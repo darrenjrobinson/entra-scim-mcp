@@ -1,0 +1,87 @@
+{
+  "name": "user-crud",
+  "source": "hand-authored",
+  "validatorCompat": false,
+  "steps": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/users",
+        "body": {
+          "schemas": [
+            "urn:ietf:params:scim:schemas:core:2.0:User",
+            "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:User"
+          ],
+          "userName": "fixture.user@contoso.local",
+          "password": "Fixture!Pass1",
+          "displayName": "Fixture User",
+          "active": true,
+          "name": { "givenName": "Fixture", "familyName": "User" },
+          "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:User": {
+            "mailNickname": "fixtureuser"
+          }
+        }
+      },
+      "expect": {
+        "status": 201,
+        "bodySubset": {
+          "userName": "fixture.user@contoso.local",
+          "displayName": "Fixture User",
+          "active": true
+        }
+      },
+      "capture": { "user1": "id" }
+    },
+    {
+      "request": { "method": "GET", "path": "/users/{{user1}}" },
+      "expect": {
+        "status": 200,
+        "bodySubset": { "userName": "fixture.user@contoso.local" }
+      }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/users?filter=userName%20eq%20%22fixture.user%40contoso.local%22"
+      },
+      "expect": {
+        "status": 200,
+        "bodySubset": {
+          "totalResults": 1,
+          "resources": [{ "userName": "fixture.user@contoso.local" }]
+        }
+      }
+    },
+    {
+      "request": {
+        "method": "PATCH",
+        "path": "/users/{{user1}}",
+        "body": {
+          "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          "Operations": [
+            { "op": "replace", "path": "displayName", "value": "Fixture Updated" }
+          ]
+        }
+      },
+      "expect": { "status": 204 }
+    },
+    {
+      "request": {
+        "method": "GET",
+        "path": "/users/{{user1}}?attributes=displayName"
+      },
+      "expect": {
+        "status": 200,
+        "bodySubset": { "displayName": "Fixture Updated" }
+      }
+    },
+    {
+      "request": { "method": "DELETE", "path": "/users/{{user1}}" },
+      "expect": { "status": 204 }
+    },
+    {
+      "request": { "method": "GET", "path": "/users/{{user1}}" },
+      "expect": { "status": 404 }
+    }
+  ]
+}
