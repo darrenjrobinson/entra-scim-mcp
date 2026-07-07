@@ -134,6 +134,81 @@ describe("ScimClient", () => {
     expect(fetcher).toHaveBeenCalledTimes(3); // initial + 2 retries
   });
 
+  it("retries when Retry-After is an HTTP-date", async () => {
+    const past = new Date(Date.now() - 1000).toUTCString();
+    const responses = [
+      new Response("rate", { status: 429, headers: { "retry-after": past } }),
+      jsonResponse(200, { ok: true }),
+    ];
+    const fetcher = vi.fn(async () => responses.shift()!);
+    const client = new ScimClient({
+      credential: fakeCredential(),
+      fetcher: fetcher as unknown as typeof fetch,
+      retryBaseDelayMs: 1,
+    });
+
+    const result = await client.request<{ ok: boolean }>({
+      method: "GET",
+      path: "/users",
+    });
+    expect(result?.ok).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels the throttled response body before retrying", async () => {
+    const throttled = new Response("rate", {
+      status: 429,
+      headers: { "retry-after": "0" },
+    });
+    const cancelSpy = vi.spyOn(throttled.body!, "cancel");
+    const responses = [throttled, jsonResponse(200, { ok: true })];
+    const fetcher = vi.fn(async () => responses.shift()!);
+    const client = new ScimClient({
+      credential: fakeCredential(),
+      fetcher: fetcher as unknown as typeof fetch,
+      retryBaseDelayMs: 1,
+    });
+
+    await client.request({ method: "GET", path: "/users" });
+    expect(cancelSpy).toHaveBeenCalled();
+  });
+
+  it("retries transient 503s for idempotent methods", async () => {
+    const responses = [
+      new Response("unavailable", { status: 503 }),
+      jsonResponse(200, { ok: true }),
+    ];
+    const fetcher = vi.fn(async () => responses.shift()!);
+    const client = new ScimClient({
+      credential: fakeCredential(),
+      fetcher: fetcher as unknown as typeof fetch,
+      retryBaseDelayMs: 1,
+    });
+
+    const result = await client.request<{ ok: boolean }>({
+      method: "GET",
+      path: "/users",
+    });
+    expect(result?.ok).toBe(true);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a 503 on POST", async () => {
+    const fetcher = vi.fn(async () => new Response("unavailable", { status: 503 }));
+    const client = new ScimClient({
+      credential: fakeCredential(),
+      fetcher: fetcher as unknown as typeof fetch,
+      retryBaseDelayMs: 1,
+    });
+
+    const err = await client
+      .request({ method: "POST", path: "/users", body: {} })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ScimError);
+    expect((err as ScimError).status).toBe(503);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("throws when a 2xx response body is not valid JSON", async () => {
     const fetcher = vi.fn(
       async () => new Response("<html>gateway error</html>", { status: 200 }),

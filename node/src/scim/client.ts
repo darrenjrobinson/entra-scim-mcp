@@ -80,8 +80,14 @@ export class ScimClient {
         throw err;
       }
 
-      if (response.status === 429 && attempt < this.maxRetries) {
+      const retryable =
+        response.status === 429 ||
+        ((response.status === 503 || response.status === 504) &&
+          isIdempotent(opts.method));
+      if (retryable && attempt < this.maxRetries) {
         const wait = this.parseRetryAfter(response.headers.get("retry-after"), attempt);
+        // Release the pooled socket; an abandoned body keeps it reserved.
+        await response.body?.cancel().catch(() => {});
         await sleep(wait);
         attempt += 1;
         continue;
@@ -122,9 +128,18 @@ export class ScimClient {
       if (Number.isFinite(seconds) && seconds >= 0) {
         return Math.min(seconds * 1000, 30_000);
       }
+      // Retry-After also allows an HTTP-date (RFC 9110 §10.2.3).
+      const dateMs = Date.parse(header);
+      if (!Number.isNaN(dateMs)) {
+        return Math.min(Math.max(dateMs - Date.now(), 0), 30_000);
+      }
     }
     return this.retryBaseDelayMs * 2 ** attempt;
   }
+}
+
+function isIdempotent(method: HttpMethod): boolean {
+  return method === "GET" || method === "DELETE";
 }
 
 function safeParseJson(text: string): unknown {
