@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { TokenCredential, AccessToken } from "@azure/identity";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer } from "../src/server.js";
 
 function fakeCredential(): TokenCredential {
@@ -10,6 +12,30 @@ function fakeCredential(): TokenCredential {
     }),
   };
 }
+
+const EXPECTED_TOOLS = [
+  // discovery
+  "get_service_provider_config",
+  "list_resource_types",
+  "list_schemas",
+  // users
+  "list_users",
+  "get_user",
+  "provision_user",
+  "update_user",
+  "deprovision_user",
+  "update_user_lifecycle",
+  "get_user_custom_security_attributes",
+  "update_user_custom_security_attributes",
+  // groups
+  "list_groups",
+  "get_group",
+  "create_group",
+  "update_group",
+  "delete_group",
+  "add_group_members",
+  "remove_group_member",
+];
 
 describe("createServer", () => {
   it("registers the full tool set", async () => {
@@ -22,9 +48,15 @@ describe("createServer", () => {
       },
     });
 
-    // McpServer exposes registered tools as an internal map; the public surface
-    // we care about is that connect() works and the server reports itself.
-    expect(server).toBeDefined();
-    expect(typeof server.connect).toBe("function");
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const mcpClient = new Client({ name: "test", version: "0.0.0" });
+    await Promise.all([
+      server.connect(serverTransport),
+      mcpClient.connect(clientTransport),
+    ]);
+
+    const { tools } = await mcpClient.listTools();
+    const names = tools.map((t) => t.name).sort();
+    expect(names).toEqual([...EXPECTED_TOOLS].sort());
   });
 });
