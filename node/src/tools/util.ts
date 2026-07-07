@@ -19,6 +19,21 @@ export interface ToolResult {
 
 export type ToolHandler<Args> = (args: Args) => Promise<ToolResult>;
 
+/**
+ * Thrown by tool handlers that need to fail with a structured payload richer
+ * than a single underlying error — e.g. a multi-request tool reporting which
+ * parts of a partially-applied change succeeded.
+ */
+export class ToolError extends Error {
+  readonly payload: Record<string, unknown>;
+
+  constructor(payload: Record<string, unknown>) {
+    super(typeof payload.detail === "string" ? payload.detail : "Tool failed");
+    this.name = "ToolError";
+    this.payload = payload;
+  }
+}
+
 export function wrapTool<Args>(
   handler: (args: Args) => Promise<unknown>,
 ): ToolHandler<Args> {
@@ -47,6 +62,13 @@ function successResult(value: unknown): ToolResult {
 }
 
 function errorResult(err: unknown): ToolResult {
+  if (err instanceof ToolError) {
+    return {
+      content: [{ type: "text", text: JSON.stringify(err.payload, null, 2) }],
+      structuredContent: err.payload,
+      isError: true,
+    };
+  }
   if (err instanceof ScimError) {
     const payload: Record<string, unknown> = {
       error: "ScimError",

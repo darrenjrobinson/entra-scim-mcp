@@ -1,8 +1,9 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ScimClient } from "../scim/client.js";
-import { wrapTool } from "./util.js";
+import { ToolError, wrapTool } from "./util.js";
 import { buildGroupFilter } from "../scim/filter.js";
+import { ScimError } from "../scim/errors.js";
 import {
   buildAddGroupMemberPatches,
   buildGroupAttributePatch,
@@ -192,17 +193,43 @@ export function registerGroupTools(server: McpServer, client: ScimClient): void 
     },
     wrapTool(async (args: { id: string; memberIds: string[] }) => {
       const bodies = buildAddGroupMemberPatches(args.memberIds);
-      for (const body of bodies) {
-        await client.request({
-          method: "PATCH",
-          path: `/groups/${encodeURIComponent(args.id)}`,
-          body,
-        });
+      // The deduped/trimmed ids actually sent, per chunk.
+      const chunks = bodies.map((body) =>
+        (body.Operations[0]!.value as { value: string }[]).map((m) => m.value),
+      );
+      const addedMemberIds: string[] = [];
+      for (const [i, body] of bodies.entries()) {
+        try {
+          await client.request({
+            method: "PATCH",
+            path: `/groups/${encodeURIComponent(args.id)}`,
+            body,
+          });
+        } catch (err) {
+          // Earlier chunks are already committed in Entra — the agent must
+          // know that, or it will report total failure after a partial write.
+          throw new ToolError({
+            error: "AddGroupMembersPartialFailure",
+            detail:
+              `PATCH ${i + 1} of ${bodies.length} failed; ` +
+              `${addedMemberIds.length} member(s) from earlier calls were already added and remain in the group. ` +
+              "Adds are idempotent, so retrying with failed + not-attempted ids is safe.",
+            id: args.id,
+            addedMemberIds,
+            failedMemberIds: chunks[i]!,
+            notAttemptedMemberIds: chunks.slice(i + 1).flat(),
+            cause:
+              err instanceof ScimError
+                ? err.toJSON()
+                : { detail: err instanceof Error ? err.message : String(err) },
+          });
+        }
+        addedMemberIds.push(...chunks[i]!);
       }
       return {
         ok: true,
         id: args.id,
-        memberIds: args.memberIds,
+        memberIds: addedMemberIds,
         patchCalls: bodies.length,
       };
     }),
