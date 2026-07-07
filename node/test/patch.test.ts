@@ -70,6 +70,75 @@ describe("buildUserPatch", () => {
     ]);
     expect(body.Operations[0]!.path).toBe('addresses[type eq "work"]');
   });
+
+  it('rejects addresses filter with non-canonical value casing ("WORK")', () => {
+    expect(() =>
+      buildUserPatch([
+        {
+          op: "replace",
+          path: 'addresses[type eq "WORK"]',
+          value: { streetAddress: "1 Main St" },
+        },
+      ]),
+    ).toThrow(PatchValidationError);
+  });
+
+  it("accepts case variants of the attribute name and operator", () => {
+    const body = buildUserPatch([
+      {
+        op: "replace",
+        path: 'addresses[Type EQ "work"]',
+        value: { streetAddress: "1 Main St" },
+      },
+    ]);
+    expect(body.Operations).toHaveLength(1);
+  });
+
+  it("rejects replace of mailNickname with null (removal-equivalent)", () => {
+    expect(() =>
+      buildUserPatch([{ op: "replace", path: "mailNickname", value: null }]),
+    ).toThrow(PatchValidationError);
+  });
+
+  it("rejects a path-less op nulling mailNickname inside the extension object", () => {
+    expect(() =>
+      buildUserPatch([
+        {
+          op: "replace",
+          value: {
+            "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:User": {
+              mailNickname: null,
+            },
+          },
+        },
+      ]),
+    ).toThrow(PatchValidationError);
+    expect(() =>
+      buildUserPatch([
+        {
+          op: "add",
+          value: {
+            "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:User:mailNickname":
+              null,
+          },
+        },
+      ]),
+    ).toThrow(PatchValidationError);
+  });
+
+  it("allows replace of mailNickname with a real value via path-less op", () => {
+    const body = buildUserPatch([
+      {
+        op: "replace",
+        value: {
+          "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:User": {
+            mailNickname: "newnick",
+          },
+        },
+      },
+    ]);
+    expect(body.Operations).toHaveLength(1);
+  });
 });
 
 describe("buildAddGroupMemberPatches", () => {
@@ -215,6 +284,16 @@ describe("buildCsaPatch", () => {
       {
         op: "add",
         value: { [SCHEMA_ENTRA_CSA]: { Engineering: { Project: "Apollo" } } },
+      },
+    ]);
+    expect(body.Operations).toHaveLength(1);
+  });
+
+  it("accepts a path-less op keyed by a URN-qualified CSA sub-attribute", () => {
+    const body = buildCsaPatch([
+      {
+        op: "add",
+        value: { [`${SCHEMA_ENTRA_CSA}:Project.ProjectName`]: "Apollo" },
       },
     ]);
     expect(body.Operations).toHaveLength(1);

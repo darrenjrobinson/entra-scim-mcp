@@ -131,6 +131,11 @@ function validateUserOperation(
       "mailNickname cannot be removed via PATCH (Entra SCIM API constraint).",
     );
   }
+  if ((op.op === "add" || op.op === "replace") && nullsOutMailNickname(op)) {
+    throw new PatchValidationError(
+      "mailNickname cannot be removed via PATCH (Entra SCIM API constraint); setting it to null is a removal.",
+    );
+  }
   if (op.path) {
     assertAddressFilterShape(op.path, idx);
   }
@@ -143,12 +148,37 @@ function pathTargetsMailNickname(path: string | undefined): boolean {
   return MAILNICKNAME_PATH_FRAGMENTS.some((frag) => lower.endsWith(frag));
 }
 
+function nullsOutMailNickname(op: ScimPatchOperation): boolean {
+  if (op.path) {
+    return pathTargetsMailNickname(op.path) && op.value === null;
+  }
+  if (!op.value || typeof op.value !== "object" || Array.isArray(op.value)) {
+    return false;
+  }
+  for (const [key, value] of Object.entries(op.value)) {
+    if (pathTargetsMailNickname(key) && value === null) return true;
+    // Nested extension object: { "urn:...:Entra:2.0:User": { mailNickname: null } }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      for (const [subKey, subValue] of Object.entries(
+        value as Record<string, unknown>,
+      )) {
+        if (subKey.toLowerCase() === "mailnickname" && subValue === null) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 function assertAddressFilterShape(path: string, idx: number): void {
   if (!path.toLowerCase().includes("addresses[")) return;
   const match = path.match(/addresses\[([^\]]+)\]/i);
   if (!match) return;
-  const filter = match[1]!.trim().toLowerCase();
-  if (filter !== 'type eq "work"') {
+  // Attribute name and operator are case-insensitive per SCIM, but the value
+  // literal is what the API matches — it must be exactly "work".
+  const filterMatch = match[1]!.trim().match(/^type\s+eq\s+"(.*)"$/i);
+  if (!filterMatch || filterMatch[1] !== "work") {
     throw new PatchValidationError(
       `Operation ${idx}: addresses path filter must be exactly [type eq "work"] (Entra SCIM API constraint).`,
     );
@@ -178,11 +208,23 @@ function targetsCsa(op: ScimPatchOperation): boolean {
     const lower = op.path.toLowerCase();
     return lower === urn || lower.startsWith(`${urn}:`) || lower.startsWith(`${urn}.`);
   }
-  // A path-less op is acceptable only when every key in its value object is
-  // the CSA extension URN, so the op cannot reach other user attributes.
+  // A path-less op is acceptable only when every key in its value object
+  // targets the CSA extension — either the bare URN or a URN-qualified
+  // sub-attribute (RFC 7644 allows fully qualified names in value objects) —
+  // so the op cannot reach other user attributes.
   if (op.value && typeof op.value === "object" && !Array.isArray(op.value)) {
     const keys = Object.keys(op.value);
-    return keys.length > 0 && keys.every((key) => key.toLowerCase() === urn);
+    return (
+      keys.length > 0 &&
+      keys.every((key) => {
+        const lower = key.toLowerCase();
+        return (
+          lower === urn ||
+          lower.startsWith(`${urn}:`) ||
+          lower.startsWith(`${urn}.`)
+        );
+      })
+    );
   }
   return false;
 }
