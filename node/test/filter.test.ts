@@ -35,6 +35,12 @@ describe("buildUserFilter", () => {
     );
   });
 
+  it("throws FilterValidationError (not TypeError) for a non-string attr", () => {
+    expect(() =>
+      buildUserFilter([{ attr: undefined as never, op: "eq", value: "x" }]),
+    ).toThrow(FilterValidationError);
+  });
+
   it("rejects unsupported attr for eq", () => {
     expect(() =>
       buildUserFilter({ attr: "displayName", op: "eq", value: "x" }),

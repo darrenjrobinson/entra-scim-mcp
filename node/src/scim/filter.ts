@@ -60,7 +60,7 @@ function buildFilter(
 
   if (kind === "user") {
     const usesExternalId = clauses.some(
-      (c) => c.attr.toLowerCase() === "externalid",
+      (c) => typeof c.attr === "string" && c.attr.toLowerCase() === "externalid",
     );
     if (usesExternalId && clauses.length > 1) {
       throw new FilterValidationError(
