@@ -20,7 +20,11 @@ export function listGroups(
 ): HandlerResponse {
   let groups = ctx.store.listGroups();
   const rawFilter = query.get("filter");
-  if (rawFilter) {
+  // `get` returns "" for a present-but-empty `?filter=` and null when the
+  // parameter is absent. Only the second means "no filter": an empty value is
+  // a client asking to filter and supplying nothing, and it goes to the parser
+  // to be rejected like the whitespace-only filter it is a hair away from.
+  if (rawFilter !== null) {
     const clauses = parseGroupFilter(rawFilter, ctx.validatorCompat);
     groups = groups.filter((group) => groupMatches(group, clauses));
   }

@@ -530,3 +530,48 @@ describe("validator-compat mode", () => {
     }
   });
 });
+
+describe("compat-mode filter grammar", () => {
+  it("400s an empty filter instead of listing the whole tenant", async () => {
+    // parsePermissiveFilter returned zero clauses for `?filter=`, and zero
+    // clauses match every resource — so the request that should have failed
+    // instead dumped the tenant.
+    const compat = createMockServer({ token: TOKEN, validatorCompat: true });
+    const { url } = await compat.listen(0);
+    try {
+      const headers = { Authorization: `Bearer ${TOKEN}` };
+      for (const seeded of ["one@x.com", "two@x.com"]) {
+        await fetch(`${url}/Users`, {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/scim+json" },
+          body: JSON.stringify({
+            schemas: [SCHEMA_USER_CORE],
+            userName: seeded,
+          }),
+        });
+      }
+
+      const res = await fetch(`${url}/Users?filter=`, { headers });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { scimType?: string; detail?: string };
+      expect(body.scimType).toBe("invalidFilter");
+      expect(body.detail).toMatch(/Filter is empty/);
+    } finally {
+      await compat.close();
+    }
+  });
+
+  it("400s two clauses with no joiner between them", async () => {
+    const compat = createMockServer({ token: TOKEN, validatorCompat: true });
+    const { url } = await compat.listen(0);
+    try {
+      const headers = { Authorization: `Bearer ${TOKEN}` };
+      const filter = encodeURIComponent('userName eq "a@x.com" displayName eq "A"');
+      const res = await fetch(`${url}/Users?filter=${filter}`, { headers });
+      expect(res.status).toBe(400);
+      expect((await res.json()).detail).toMatch(/Expected 'and'/);
+    } finally {
+      await compat.close();
+    }
+  });
+});

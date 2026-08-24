@@ -1,4 +1,5 @@
 import { FilterValidationError } from "../../scim/errors.js";
+import type { ValidatedFilterClause } from "../../scim/filter.js";
 import { SCHEMA_ENTRA_USER, type ScimUserCreatePayload } from "../../scim/types.js";
 import { MockScimError } from "../errors.js";
 import { parseFilter, userMatches } from "../filter-parse.js";
@@ -28,7 +29,11 @@ export function listUsers(
 ): HandlerResponse {
   let users = ctx.store.listUsers();
   const rawFilter = query.get("filter");
-  if (rawFilter) {
+  // `get` returns "" for a present-but-empty `?filter=` and null when the
+  // parameter is absent. Only the second means "no filter": an empty value is
+  // a client asking to filter and supplying nothing, and it goes to the parser
+  // to be rejected like the whitespace-only filter it is a hair away from.
+  if (rawFilter !== null) {
     const clauses = parseUserFilter(rawFilter, ctx.validatorCompat);
     const matchCtx = { groupIdsOfUser: (id: string) => ctx.store.groupIdsOfUser(id) };
     users = users.filter((user) => userMatches(user, clauses, matchCtx));
@@ -148,23 +153,58 @@ function parseUserFilter(raw: string, validatorCompat: boolean) {
   }
 }
 
-export function parsePermissiveFilter(raw: string) {
-  // Same grammar, no allow-list: attr (eq|ew) "value" joined by and.
-  const clauses: { attr: string; op: "eq" | "ew"; value: string }[] = [];
+/**
+ * The same grammar parseFilter accepts — `attr (eq|ew) "value"` joined by
+ * `and` — with the Entra attribute allow-list left off.
+ *
+ * Compat mode exists so an RFC-standard client (the SCIM Validator) can filter
+ * on attributes Entra does not permit, such as a plain `displayName` on users.
+ * Dropping the allow-list is the whole of that licence; the grammar itself
+ * stays as strict as the real parser, so a filter this accepts is one the
+ * matcher can honour rather than one it quietly approximates.
+ */
+export function parsePermissiveFilter(raw: string): ValidatedFilterClause[] {
+  const clauses: ValidatedFilterClause[] = [];
   let rest = raw.trim();
-  const pattern = /^(\S+)\s+(eq|ew)\s+"((?:[^"\\]|\\.)*)"\s*(and\s+)?/i;
-  while (rest.length > 0) {
-    const match = rest.match(pattern);
+
+  // An empty filter used to return zero clauses, and zero clauses match
+  // everything — so `?filter=` listed the entire tenant instead of failing.
+  if (rest.length === 0) {
+    throw new FilterValidationError("Filter is empty.");
+  }
+
+  const clausePattern = /^(\S+)\s+(eq|ew)\s+"((?:[^"\\]|\\.)*)"/i;
+  for (;;) {
+    const match = rest.match(clausePattern);
     if (!match) {
       throw new FilterValidationError(`Unparseable filter near: ${rest.slice(0, 40)}`);
     }
     clauses.push({
       attr: match[1]!,
-      op: match[2]!.toLowerCase() as "eq" | "ew",
+      op: match[2]!.toLowerCase() as ValidatedFilterClause["op"],
       value: match[3]!.replace(/\\(["\\])/g, "$1"),
     });
-    rest = rest.slice(match[0].length);
+
+    rest = rest.slice(match[0].length).trimStart();
+    if (rest.length === 0) break;
+
+    // A trailing `(and\s+)?` on the clause pattern used to make the joiner
+    // optional, so two clauses written side by side with nothing between them
+    // were silently read as an `and`.
+    const joiner = rest.match(/^(and|or|not)\s+/i);
+    if (!joiner) {
+      throw new FilterValidationError(
+        `Expected 'and' between filter clauses near: ${rest.slice(0, 40)}`,
+      );
+    }
+    if (joiner[1]!.toLowerCase() !== "and") {
+      throw new FilterValidationError(
+        `Only the 'and' logical operator is supported (Entra SCIM API constraint); got '${joiner[1]}'.`,
+      );
+    }
+    rest = rest.slice(joiner[0].length);
   }
+
   return clauses;
 }
 
