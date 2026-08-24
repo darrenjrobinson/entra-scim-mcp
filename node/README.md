@@ -164,6 +164,29 @@ The Entra SCIM API has constraints that are easy to miss. The tool layer rejects
 
 Errors come back to the agent as a structured payload with `status`, `scimType`, and `detail`.
 
+## API behaviours worth knowing
+
+Things the live API does that the docs either state ambiguously or not at all. Each was found by running against a real tenant or the Microsoft SCIM Validator, and each is handled for you — they are listed because they change how you read a response.
+
+**DELETE must not carry an `Accept` header.** The API answers `400 Accept header application/json is invalid`. All four variants were probed live: no header → 204, `*/*` → 204, `application/json` → 400, `application/scim+json` → 400. Only DELETE inverts the rule — every other method *requires* a JSON `Accept`, and omitting it is a documented 400. This one silently broke `deprovision_user` and `delete_group` until the first live run.
+
+**Custom Security Attributes never come back from a plain read.** In `/Schemas` the attribute-set-level attribute is `returned: "request"`, so `get_user` will not include CSAs no matter what you ask for. They only appear when named explicitly, and projection is **set-granular**: `urn:...:CustomSecurityAttributes:<Set>`. The bare extension URN is rejected outright (`400 ... not supported in the "attributes" or "excludedAttributes" query parameter`), which is why `attributeSets` is a required input rather than an optional one.
+
+**CSA values are typed, and the type is enforced.** Boolean, Integer, String and multi-valued String all round-trip intact when sent as the matching JSON type, and one PATCH may carry several attributes at once. Two removal behaviours, neither documented by Microsoft:
+
+- `op: "remove"` on a CSA path clears that one assignment and leaves the others intact.
+- `replace` with `[]` on a multi-valued attribute **removes** the assignment — a later read omits the attribute entirely rather than returning an empty array.
+
+**`password` is required on create but never readable.** It is `writeOnly` / `returned: never`, and no response ever echoes it. The full required create set is `userName`, `password`, `displayName`, `name.givenName`, `name.familyName` and `mailNickname` — considerably stricter than RFC 7643, which requires only `userName`.
+
+**Group `displayName` is not unique.** Entra accepts a duplicate group name and returns 201. RFC-oriented tooling often assumes 409 here, so do not rely on create failing to detect an existing group — filter first.
+
+**Group reads never include members.** `get_group` returns no `members` array at any page size. To find a user's groups, filter the other way: `list_groups` with `members.value eq "<userId>"`.
+
+**Errors are structured, and worth surfacing verbatim.** Failures carry `status`, `scimType` and `detail`, and the `detail` text is unusually specific (it will name the offending operation index and constraint). The tools pass it through unchanged rather than flattening it to a message.
+
+**Every call is billed.** There is no batching beyond what the API itself requires, so a chatty agent costs real money. `add_group_members` chunks at the API's 20-member cap, which is the one place batching happens.
+
 ## Testing against a real tenant
 
 The test suite never touches a real tenant. To verify the tools against live Entra, put credentials in a gitignored `.env` and run the smoke script.
@@ -232,16 +255,19 @@ export ENTRA_SCIM_STATIC_TOKEN=dev-token
 npx tsx scripts/live-smoke.ts --rehearse
 ```
 
-The mock rehearsal is the one worth doing: it exercises real HTTP, real ids and the full create/patch/delete ordering, so it catches sequencing and cleanup bugs before you spend anything. It is not a substitute for the live run — the first live pass found two bugs no mock run had caught (see [What the live tenant taught us](#what-the-live-tenant-taught-us)).
+The mock rehearsal is the one worth doing: it exercises real HTTP, real ids and the full create/patch/delete ordering, so it catches sequencing and cleanup bugs before you spend anything. It is not a substitute for the live run — the first live pass found two bugs no mock run had caught (see [What the test legs actually caught](#what-the-test-legs-actually-caught)).
 
-### What the live tenant taught us
+### What the test legs actually caught
 
-The first live pass (2026-08-24, tenant with SCIM inbound GA) found two things no mock or dry-run had caught. Both are fixed, with regression tests:
+Three independent legs, each of which found things the others could not — the reason all three exist:
 
-- **DELETE must not carry an `Accept` header.** The API answers `400 Accept header application/json is invalid` — so `deprovision_user` and `delete_group` had never worked against a real tenant. Probing confirmed a wildcard `Accept` or no header returns 204, while both `application/json` and `application/scim+json` are rejected. Only DELETE behaves this way; every other method requires a JSON `Accept`. The mock now reproduces the asymmetry.
-- **The bare CSA extension URN is not a valid `attributes` value.** `attributes=urn:...:CustomSecurityAttributes` returns `400 ... is not supported in the "attributes" or "excludedAttributes" query parameter`. Projection is set-granular only (`urn:...:CustomSecurityAttributes:<Set>`), so `attributeSets` is now required rather than optional. This closes the open question in footnote 1 of [REVIEW.md](../REVIEW.md).
+| Leg | Cost | Found |
+| --- | --- | --- |
+| Mock + unit suite | free | Sequencing, validation and cleanup bugs. Fast, but shares its own assumptions, so it cannot catch a wrong assumption. |
+| Live tenant (`smoke:live`) | ~21 billed calls | The DELETE `Accept` bug (two tools that had never worked), the invalid bare CSA URN, and CSA type/removal semantics. |
+| [SCIM Validator](docs/scim-validator.md) | free | Seven mock-fidelity gaps — places the mock was more lenient than a real SCIM client expects, each of which had been hiding a real behaviour. |
 
-**All 18 tools are now verified against the live API.** Confirmed working: all three discovery endpoints, the full user lifecycle including `employeeLeaveDateTime`, `userName eq` filtering, group create/read/attribute-PATCH/delete, member add and remove, `members.value eq` membership lookup, and both CSA tools — a Boolean attribute assigned and read back with its type intact via `--csa-only`.
+The pattern worth taking away: **mock leniency hides real API behaviour.** Every defect the live run found had passed a full mock suite first, because the mock had been written from the same reading of the docs as the client. A third-party client (the validator) and a real tenant were the only things that could break that circularity. See [REVIEW.md](../REVIEW.md) for the per-finding record.
 
 ### Driving the live tenant conversationally
 

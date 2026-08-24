@@ -7,6 +7,10 @@ captures/
 .env.local
 *.local
 
+# Draft blog post, not part of the package docs
+Blogpost.md
+Blogpost.MD
+
 *.log
 npm-debug.log*
 
