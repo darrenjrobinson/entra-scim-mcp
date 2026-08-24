@@ -180,7 +180,7 @@ cp .env.example .env      # then fill in tenant id, client id, and the secret VA
 | `ENTRA_SCIM_SMOKE_DOMAIN` | Verified domain the throwaway `scim-smoke-*` identities are created in |
 | `ENTRA_SCIM_SMOKE_CSA_SET` | Attribute set name; set it to cover the two Custom Security Attribute tools |
 | `ENTRA_SCIM_SMOKE_CSA_ATTR` | Attribute name within that set |
-| `ENTRA_SCIM_SMOKE_CSA_VALUE` | Optional value to assign; defaults to a string, so use this if the attribute is an int or boolean |
+| `ENTRA_SCIM_SMOKE_CSA_VALUE` | Value to assign. CSAs are typed and the API rejects a mismatch: `true`/`false` are sent as a JSON boolean, a bare integer as a number, anything else as a string. Defaults to a string, so set this for Boolean or Integer attributes |
 
 ### The smoke script
 

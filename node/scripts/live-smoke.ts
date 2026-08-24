@@ -243,7 +243,7 @@ async function main(): Promise<void> {
   const runId = stamp();
   const csaSet = process.env.ENTRA_SCIM_SMOKE_CSA_SET?.trim();
   const csaAttr = process.env.ENTRA_SCIM_SMOKE_CSA_ATTR?.trim();
-  const csaValue = process.env.ENTRA_SCIM_SMOKE_CSA_VALUE?.trim() || `smoke-${runId}`;
+  const csaValue = parseCsaValue(process.env.ENTRA_SCIM_SMOKE_CSA_VALUE, runId);
 
   const identities = [1, 2].map((i) => ({
     userName: `${SMOKE_PREFIX}${runId}-${i}@${domain}`,
@@ -356,6 +356,10 @@ async function main(): Promise<void> {
         skip("get_user_custom_security_attributes", CSA_SETUP_HINT);
       }
       if (csaSet && csaAttr) {
+        process.stdout.write(
+          `      note: assigning ${csaSet}.${csaAttr} = ${JSON.stringify(csaValue)} ` +
+            `(${typeof csaValue}) — must match the attribute's declared data type\n`,
+        );
         await call("update_user_custom_security_attributes", {
           id: user1,
           operations: [
@@ -584,6 +588,21 @@ function stamp(): string {
   const d = new Date();
   const p = (n: number): string => String(n).padStart(2, "0");
   return `${p(d.getFullYear() % 100)}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+/**
+ * Custom security attributes are typed (Boolean, Integer, String) and the API
+ * rejects a value of the wrong type. Env vars are always strings, so coerce
+ * `true`/`false` and bare integers to real JSON types; anything else stays a
+ * string.
+ */
+function parseCsaValue(raw: string | undefined, runId: string): unknown {
+  const v = raw?.trim();
+  if (!v) return `smoke-${runId}`;
+  if (/^true$/i.test(v)) return true;
+  if (/^false$/i.test(v)) return false;
+  if (/^-?\d+$/.test(v)) return Number(v);
+  return v;
 }
 
 /** Satisfies the Entra default password policy without being guessable. */
