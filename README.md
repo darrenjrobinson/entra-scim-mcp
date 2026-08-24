@@ -50,7 +50,7 @@ Then point the MCP server at it:
 }
 ```
 
-Mock flags: `--port`, `--token`, `--seed <file.json>`, `--no-seed`, `--capture <file.jsonl>` (log every request/response), `--validator-compat` (RFC-standard behavior for the [Microsoft SCIM Validator](https://scimvalidator.microsoft.com) — see [docs/scim-validator.md](docs/scim-validator.md)).
+Mock flags: `--port`, `--token`, `--seed <file.json>`, `--no-seed`, `--capture <file.jsonl>` (log every request/response), `--validator-compat` (RFC-standard behavior for the [Microsoft SCIM Validator](https://scimvalidator.microsoft.com) — see [docs/scim-validator.md](node/docs/scim-validator.md)).
 
 ## Install / run
 
@@ -265,7 +265,7 @@ Three independent legs, each of which found things the others could not — the 
 | --- | --- | --- |
 | Mock + unit suite | free | Sequencing, validation and cleanup bugs. Fast, but shares its own assumptions, so it cannot catch a wrong assumption. |
 | Live tenant (`smoke:live`) | ~21 billed calls | The DELETE `Accept` bug (two tools that had never worked), the invalid bare CSA URN, and CSA type/removal semantics. |
-| [SCIM Validator](docs/scim-validator.md) | free | Seven mock-fidelity gaps — places the mock was more lenient than a real SCIM client expects, each of which had been hiding a real behaviour. |
+| [SCIM Validator](node/docs/scim-validator.md) | free | Seven mock-fidelity gaps — places the mock was more lenient than a real SCIM client expects, each of which had been hiding a real behaviour. |
 
 The pattern worth taking away: **mock leniency hides real API behaviour.** Every defect the live run found had passed a full mock suite first, because the mock had been written from the same reading of the docs as the client. A third-party client (the validator) and a real tenant were the only things that could break that circularity.
 
@@ -288,7 +288,7 @@ npm run mock            # run the local mock server (tsx, no build needed)
 npm run mock:capture    # mock in validator-compat mode, capturing traffic to captures/
 ```
 
-The server has no test dependency on a real tenant. Unit tests cover the filter, patch, query, and client layers; integration tests boot the in-process mock server and drive **every MCP tool end-to-end** over real HTTP (`test/integration/`). Captured [SCIM Validator](docs/scim-validator.md) sessions convert into replay fixtures with `npm run fixtures:convert`. For the one thing none of that can prove — that the live API accepts these payloads — see [Testing against a real tenant](#testing-against-a-real-tenant).
+The server has no test dependency on a real tenant. Unit tests cover the filter, patch, query, and client layers; integration tests boot the in-process mock server and drive **every MCP tool end-to-end** over real HTTP (`node/test/integration/`). Captured [SCIM Validator](node/docs/scim-validator.md) sessions convert into replay fixtures with `npm run fixtures:convert`. For the one thing none of that can prove — that the live API accepts these payloads — see [Testing against a real tenant](#testing-against-a-real-tenant).
 
 ## License
 

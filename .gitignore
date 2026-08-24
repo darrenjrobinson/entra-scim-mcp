@@ -13,6 +13,9 @@ Blogpost.MD
 REVIEW.md
 Entra SCIM MCP Server.md
 
+# Copied in from the repo root at pack time; the root file is the source
+node/README.md
+
 *.log
 npm-debug.log*
 
