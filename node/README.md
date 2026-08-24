@@ -267,7 +267,7 @@ Three independent legs, each of which found things the others could not — the 
 | Live tenant (`smoke:live`) | ~21 billed calls | The DELETE `Accept` bug (two tools that had never worked), the invalid bare CSA URN, and CSA type/removal semantics. |
 | [SCIM Validator](docs/scim-validator.md) | free | Seven mock-fidelity gaps — places the mock was more lenient than a real SCIM client expects, each of which had been hiding a real behaviour. |
 
-The pattern worth taking away: **mock leniency hides real API behaviour.** Every defect the live run found had passed a full mock suite first, because the mock had been written from the same reading of the docs as the client. A third-party client (the validator) and a real tenant were the only things that could break that circularity. See [REVIEW.md](../REVIEW.md) for the per-finding record.
+The pattern worth taking away: **mock leniency hides real API behaviour.** Every defect the live run found had passed a full mock suite first, because the mock had been written from the same reading of the docs as the client. A third-party client (the validator) and a real tenant were the only things that could break that circularity.
 
 ### Driving the live tenant conversationally
 

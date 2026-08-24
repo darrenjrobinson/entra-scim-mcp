@@ -7,9 +7,11 @@ captures/
 .env.local
 *.local
 
-# Draft blog post, not part of the package docs
+# Internal working docs, not part of the published package
 Blogpost.md
 Blogpost.MD
+REVIEW.md
+Entra SCIM MCP Server.md
 
 *.log
 npm-debug.log*
