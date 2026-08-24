@@ -91,6 +91,34 @@ describe("applyUserPatch", () => {
     });
   });
 
+  // Verified live 2026-08-24: an empty-array replace removes the assignment,
+  // and a read afterwards does not return the attribute at all.
+  it("treats an empty-array CSA value as removing the assignment", () => {
+    const assigned = applyUserPatch(makeUser(), patch([
+      { op: "add", path: `${SCHEMA_ENTRA_CSA}:SCIMMCP.locations`, value: ["AU", "NZ"] },
+      { op: "add", path: `${SCHEMA_ENTRA_CSA}:SCIMMCP.trustLevel`, value: 42 },
+    ]));
+    expect(assigned[SCHEMA_ENTRA_CSA]).toEqual({
+      SCIMMCP: { locations: ["AU", "NZ"], trustLevel: 42 },
+    });
+
+    const cleared = applyUserPatch(assigned, patch([
+      { op: "replace", path: `${SCHEMA_ENTRA_CSA}:SCIMMCP.locations`, value: [] },
+    ]));
+    // The cleared attribute is gone; the sibling assignment survives.
+    expect(cleared[SCHEMA_ENTRA_CSA]).toEqual({ SCIMMCP: { trustLevel: 42 } });
+  });
+
+  it("drops the attribute set once its last assignment is cleared", () => {
+    const assigned = applyUserPatch(makeUser(), patch([
+      { op: "add", path: `${SCHEMA_ENTRA_CSA}:SCIMMCP.locations`, value: ["AU"] },
+    ]));
+    const cleared = applyUserPatch(assigned, patch([
+      { op: "replace", path: `${SCHEMA_ENTRA_CSA}:SCIMMCP.locations`, value: [] },
+    ]));
+    expect(cleared[SCHEMA_ENTRA_CSA]).toEqual({});
+  });
+
   it("updates the work address through the filtered path", () => {
     const updated = applyUserPatch(makeUser(), patch([
       {

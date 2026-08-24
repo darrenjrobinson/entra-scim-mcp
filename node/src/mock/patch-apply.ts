@@ -47,7 +47,27 @@ export function applyUserPatch(
     applyOperation(updated, op, USER_URNS, USER_CORE_URNS);
   }
   if (validatorCompat) normalizeManager(updated);
+  dropEmptyCsaValues(updated);
   return updated;
+}
+
+/**
+ * Verified on a live tenant 2026-08-24: replacing a multi-valued custom
+ * security attribute with `[]` removes the assignment — a follow-up read does
+ * not return the attribute at all, rather than returning an empty array. Match
+ * that, or the mock reports a cleared attribute as present-but-empty.
+ */
+function dropEmptyCsaValues(user: StoredUser): void {
+  const csa = user[SCHEMA_ENTRA_CSA] as Record<string, unknown> | undefined;
+  if (!csa || typeof csa !== "object") return;
+  for (const [setName, set] of Object.entries(csa)) {
+    if (!set || typeof set !== "object") continue;
+    const values = set as Record<string, unknown>;
+    for (const [attr, value] of Object.entries(values)) {
+      if (Array.isArray(value) && value.length === 0) delete values[attr];
+    }
+    if (Object.keys(values).length === 0) delete csa[setName];
+  }
 }
 
 /**

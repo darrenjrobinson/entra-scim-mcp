@@ -254,8 +254,15 @@ async function main(): Promise<void> {
   const groupName = `${GROUP_PREFIX}${runId}`;
 
   if (values["csa-only"]) {
-    if (!csaSet || !csaAttr) fail(`--csa-only ${CSA_SETUP_HINT}`);
-    await runCsaOnly(call, identities[0]!, csaSet, csaAttr, csaValue);
+    if (!csaSet) fail(`--csa-only ${CSA_SETUP_HINT}`);
+    const attrs = parseCsaAttrs(
+      process.env.ENTRA_SCIM_SMOKE_CSA_ATTRS,
+      csaAttr,
+      csaValue,
+      runId,
+    );
+    if (attrs.length === 0) fail(`--csa-only ${CSA_SETUP_HINT}`);
+    await runCsaOnly(call, identities[0]!, csaSet, attrs);
     await mcp.close().catch(() => {});
     summarize({ sweepOnly: true });
     return;
@@ -505,11 +512,18 @@ async function cleanup(
   }
 }
 
+export interface CsaAttr {
+  name: string;
+  type: CsaType;
+  value: unknown;
+}
+
 /**
  * Just the two Custom Security Attribute tools, on one throwaway user —
- * ~5 billed calls instead of ~21. Goes further than the full pass by reading
- * the value back after assigning it, which is the only real proof that the
- * PATCH path shape and the value's type were both accepted.
+ * ~9 billed calls instead of ~21. Goes further than the full pass in three
+ * ways: it reads every value back (a PATCH the API accepts but stores nothing
+ * would otherwise look like a pass), it covers each declared data type, and it
+ * exercises removal, which the Entra docs never spell out for CSAs.
  */
 async function runCsaOnly(
   call: (
@@ -519,12 +533,15 @@ async function runCsaOnly(
   ) => Promise<ToolOutput | null>,
   ident: { userName: string; mailNickname: string; displayName: string },
   csaSet: string,
-  csaAttr: string,
-  csaValue: unknown,
+  attrs: CsaAttr[],
 ): Promise<void> {
   process.stdout.write(
     `\nCSA-only run on ${ident.userName}\n` +
-      `  assigning ${csaSet}.${csaAttr} = ${JSON.stringify(csaValue)} (${typeof csaValue})\n\n`,
+      `  set ${csaSet}, ${attrs.length} attribute(s):\n` +
+      attrs
+        .map((a) => `    ${a.name} (${a.type}) = ${JSON.stringify(a.value)}\n`)
+        .join("") +
+      "\n",
   );
 
   const created = await call(
@@ -545,36 +562,90 @@ async function runCsaOnly(
     return;
   }
   const id: string = created.id;
+  const path = (attr: string): string => `${SCHEMA_ENTRA_CSA}:${csaSet}.${attr}`;
+  const read = (): Promise<ToolOutput | null> =>
+    call("get_user_custom_security_attributes", { id, attributeSets: [csaSet] });
+  const valuesOf = (out: ToolOutput | null): Record<string, unknown> =>
+    (out?.[SCHEMA_ENTRA_CSA]?.[csaSet] as Record<string, unknown>) ?? {};
 
   try {
     // Before: proves the projection is accepted even with nothing assigned.
-    await call("get_user_custom_security_attributes", { id, attributeSets: [csaSet] });
+    await read();
 
-    const patched = await call("update_user_custom_security_attributes", {
+    // One PATCH carrying every declared type, which is what a real caller
+    // would send. On failure each attribute is retried alone, so a single
+    // offending data type is named rather than hidden behind one 400.
+    let assigned = attrs;
+    const batch = await call("update_user_custom_security_attributes", {
       id,
-      operations: [
-        { op: "add", path: `${SCHEMA_ENTRA_CSA}:${csaSet}.${csaAttr}`, value: csaValue },
-      ],
+      operations: attrs.map((a) => ({ op: "add", path: path(a.name), value: a.value })),
     });
+    if (!batch) {
+      process.stdout.write(
+        `      note: the combined PATCH failed — isolating which attribute the API rejects\n`,
+      );
+      assigned = [];
+      for (const a of attrs) {
+        const one = await call("update_user_custom_security_attributes", {
+          id,
+          operations: [{ op: "add", path: path(a.name), value: a.value }],
+        });
+        if (one) assigned.push(a);
+        else process.stdout.write(`      note: rejected ${a.name} (${a.type})\n`);
+      }
+    }
 
-    if (patched) {
-      // After: the round trip. A silent empty here would mean the PATCH was
-      // accepted but stored nothing.
-      const after = await call("get_user_custom_security_attributes", {
-        id,
-        attributeSets: [csaSet],
-      });
-      const returned = after?.[SCHEMA_ENTRA_CSA]?.[csaSet]?.[csaAttr];
-      if (returned === undefined) {
-        process.stdout.write(
-          `      note: read-back did NOT include ${csaSet}.${csaAttr} — ` +
-            `keys returned: ${Object.keys(after ?? {}).join(", ") || "none"}\n`,
-        );
+    // The round trip. A PATCH the API accepts but stores nothing would look
+    // like a pass without this.
+    const after = valuesOf(await read());
+    for (const a of assigned) {
+      const got = after[a.name];
+      if (got === undefined) {
+        process.stdout.write(`      note: ${a.name} (${a.type}) did NOT come back\n`);
       } else {
-        const match = returned === csaValue ? "matches" : "DIFFERS from";
+        const same = JSON.stringify(got) === JSON.stringify(a.value);
         process.stdout.write(
-          `      note: read-back ${match} what was sent: ` +
-            `${JSON.stringify(returned)} (${typeof returned})\n`,
+          `      note: ${a.name} (${a.type}) ${same ? "round-trips" : "DIFFERS"}: ` +
+            `sent ${JSON.stringify(a.value)}, got ${JSON.stringify(got)}\n`,
+        );
+      }
+    }
+
+    // Removal semantics: the SCIM-native `op: remove`, which the Entra docs
+    // never spell out for CSAs. Deprovisioning workflows need this to work.
+    const removable = assigned.find((a) => !Array.isArray(a.value));
+    if (!removable) {
+      process.stdout.write("      note: no single-valued attribute assigned, skipping remove\n");
+    } else {
+      const removed = await call("update_user_custom_security_attributes", {
+        id,
+        operations: [{ op: "remove", path: path(removable.name) }],
+      });
+      if (removed) {
+        const post = valuesOf(await read());
+        const gone = post[removable.name] === undefined;
+        const survivors = assigned.filter(
+          (a) => a.name !== removable.name && post[a.name] !== undefined,
+        ).length;
+        process.stdout.write(
+          `      note: op:remove ${gone ? "cleared" : "did NOT clear"} ${removable.name}; ` +
+            `${survivors} other assignment(s) intact\n`,
+        );
+      }
+    }
+
+    // Multi-valued clear: an empty array is the documented way to empty one.
+    const multi = assigned.find((a) => Array.isArray(a.value));
+    if (multi) {
+      const cleared = await call("update_user_custom_security_attributes", {
+        id,
+        operations: [{ op: "replace", path: path(multi.name), value: [] }],
+      });
+      if (cleared) {
+        const post = valuesOf(await read());
+        const got = post[multi.name];
+        process.stdout.write(
+          `      note: empty-array replace on ${multi.name} left ${JSON.stringify(got)}\n`,
         );
       }
     }
@@ -690,6 +761,59 @@ function parseCsaValue(raw: string | undefined, runId: string): unknown {
   if (/^false$/i.test(v)) return false;
   if (/^-?\d+$/.test(v)) return Number(v);
   return v;
+}
+
+type CsaType = "bool" | "int" | "string" | "string[]";
+
+/**
+ * Parse ENTRA_SCIM_SMOKE_CSA_ATTRS — a compact declaration of the attribute
+ * set's shape, e.g.
+ *   isMCPManaged:bool,accountType:string,trustLevel:int,approvedLocations:string[]
+ * A test value is derived per type so the run proves the API accepts each one.
+ * Falls back to the single ENTRA_SCIM_SMOKE_CSA_ATTR / _VALUE pair.
+ */
+function parseCsaAttrs(
+  raw: string | undefined,
+  fallbackAttr: string | undefined,
+  fallbackValue: unknown,
+  runId: string,
+): CsaAttr[] {
+  const spec = raw?.trim();
+  if (!spec) {
+    return fallbackAttr
+      ? [{ name: fallbackAttr, type: typeOf(fallbackValue), value: fallbackValue }]
+      : [];
+  }
+  return spec
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [name, rawType] = entry.split(":").map((s) => s.trim());
+      if (!name) fail(`Malformed ENTRA_SCIM_SMOKE_CSA_ATTRS entry: "${entry}"`);
+      const type = (rawType || "string").toLowerCase() as CsaType;
+      switch (type) {
+        case "bool":
+          return { name, type, value: true };
+        case "int":
+          return { name, type, value: 42 };
+        case "string":
+          return { name, type, value: `smoke-${runId}` };
+        case "string[]":
+          return { name, type, value: [`smoke-${runId}`, "AU"] };
+        default:
+          return fail(
+            `Unknown CSA type "${rawType}" for ${name}. Use bool, int, string or string[].`,
+          );
+      }
+    });
+}
+
+function typeOf(value: unknown): CsaType {
+  if (typeof value === "boolean") return "bool";
+  if (typeof value === "number") return "int";
+  if (Array.isArray(value)) return "string[]";
+  return "string";
 }
 
 /** Satisfies the Entra default password policy without being guessable. */

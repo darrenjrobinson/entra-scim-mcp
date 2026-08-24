@@ -204,11 +204,19 @@ One ordered pass over all 18 tools in roughly 21 billed calls. It creates two us
 
 The two Custom Security Attribute tools report `skip` until an attribute set exists in the tenant (**Entra portal -> Protection -> Custom security attributes**) and `ENTRA_SCIM_SMOKE_CSA_SET` / `ENTRA_SCIM_SMOKE_CSA_ATTR` name it. Everything else runs unattended.
 
-Once a set exists, validate just those two tools for about 5 calls instead of 21 — this also reads the value back after assigning it, which the full pass does not:
+Once a set exists, validate just those two tools for about 9 calls instead of 21 — this reads every value back (a PATCH the API accepts but stores nothing would otherwise look like a pass), covers each declared data type, and exercises removal:
 
 ```bash
 npx tsx scripts/live-smoke.ts --csa-only --confirm
 ```
+
+Declare the set's shape once and the run derives a test value per type:
+
+```
+ENTRA_SCIM_SMOKE_CSA_ATTRS=isManaged:bool,accountType:string,trustLevel:int,locations:string[]
+```
+
+Confirmed live against all four types: values round-trip intact, `op: "remove"` clears one assignment and leaves the rest, and replacing a multi-valued attribute with `[]` removes it — a later read omits the attribute entirely rather than returning an empty array.
 
 Rehearse at zero cost before spending anything - this validates the script, not the API:
 
