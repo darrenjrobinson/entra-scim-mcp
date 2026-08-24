@@ -89,3 +89,23 @@ describe("get_user_custom_security_attributes", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
+
+describe("query validation surfaces as a named error", () => {
+  it("reports QueryValidationError, not UnexpectedError", async () => {
+    const fetcher = vi.fn(async () => okUser());
+    const mcp = await connectedClient(fetcher as unknown as typeof fetch);
+
+    const result = await mcp.callTool({
+      name: "list_users",
+      arguments: { cursor: " leading-space" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      error: "QueryValidationError",
+    });
+    expect(String(result.structuredContent?.detail)).toMatch(/whitespace/i);
+    // Rejected client-side: nothing was sent.
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+});

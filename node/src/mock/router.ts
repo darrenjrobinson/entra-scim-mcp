@@ -1,5 +1,9 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
-import { FilterValidationError, PatchValidationError } from "../scim/errors.js";
+import {
+  FilterValidationError,
+  PatchValidationError,
+  QueryValidationError,
+} from "../scim/errors.js";
 import { assertRawQueryHasNoWhitespaceAroundEquals } from "../scim/query.js";
 import { MockScimError, scimErrorBody } from "./errors.js";
 import { resourceTypeById, resourceTypesList, serviceProviderConfig } from "./data/discovery.js";
@@ -77,7 +81,10 @@ async function handle(
     try {
       assertRawQueryHasNoWhitespaceAroundEquals(rawQuery);
     } catch (err) {
-      throw new MockScimError(400, (err as Error).message, "invalidValue");
+      // Only the whitespace rule belongs to this call; anything else is a bug
+      // here, not a bad request, and must not be relabelled as a 400.
+      if (!(err instanceof QueryValidationError)) throw err;
+      throw new MockScimError(400, err.message, "invalidValue");
     }
 
     // Bearer check.

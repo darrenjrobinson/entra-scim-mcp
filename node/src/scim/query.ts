@@ -3,6 +3,8 @@
 // helper accidentally introduces a space, and we strip leading/trailing
 // whitespace from each key/value to fail fast if the caller passes one.
 
+import { QueryValidationError } from "./errors.js";
+
 export type QueryParams = Record<string, string | number | undefined | null>;
 
 export function buildQueryString(params: QueryParams | undefined): string {
@@ -30,7 +32,7 @@ export function assertRawQueryHasNoWhitespaceAroundEquals(rawQuery: string): voi
   const encodedWs = "(?:%09|%0A|%0D|%20)";
   const around = new RegExp(`(?:\\s|\\+|${encodedWs})=|=(?:\\s|\\+|${encodedWs})`, "i");
   if (around.test(rawQuery)) {
-    throw new Error(
+    throw new QueryValidationError(
       'Whitespace (encoded or unencoded) around "=" in the query string is not allowed (Entra SCIM API constraint).',
     );
   }
@@ -39,7 +41,7 @@ export function assertRawQueryHasNoWhitespaceAroundEquals(rawQuery: string): voi
 function assertNoSurroundingWhitespace(label: string, s: string): void {
   if (s.length === 0) return;
   if (/^\s|\s$/.test(s)) {
-    throw new Error(
+    throw new QueryValidationError(
       `Query ${label} has leading or trailing whitespace; the Entra SCIM API rejects whitespace around "=" in query strings.`,
     );
   }

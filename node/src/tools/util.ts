@@ -3,6 +3,7 @@ import {
   DryRunRequest,
   FilterValidationError,
   PatchValidationError,
+  QueryValidationError,
   ScimError,
 } from "../scim/errors.js";
 
@@ -140,6 +141,7 @@ function errorResult(err: unknown): ToolResult {
   if (
     err instanceof FilterValidationError ||
     err instanceof PatchValidationError ||
+    err instanceof QueryValidationError ||
     err instanceof ConfigError
   ) {
     const payload: Record<string, unknown> = {
