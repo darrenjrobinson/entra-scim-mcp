@@ -204,6 +204,12 @@ One ordered pass over all 18 tools in roughly 21 billed calls. It creates two us
 
 The two Custom Security Attribute tools report `skip` until an attribute set exists in the tenant (**Entra portal -> Protection -> Custom security attributes**) and `ENTRA_SCIM_SMOKE_CSA_SET` / `ENTRA_SCIM_SMOKE_CSA_ATTR` name it. Everything else runs unattended.
 
+Once a set exists, validate just those two tools for about 5 calls instead of 21 — this also reads the value back after assigning it, which the full pass does not:
+
+```bash
+npx tsx scripts/live-smoke.ts --csa-only --confirm
+```
+
 Rehearse at zero cost before spending anything - this validates the script, not the API:
 
 ```bash
@@ -227,7 +233,7 @@ The first live pass (2026-08-24, tenant with SCIM inbound GA) found two things n
 - **DELETE must not carry an `Accept` header.** The API answers `400 Accept header application/json is invalid` — so `deprovision_user` and `delete_group` had never worked against a real tenant. Probing confirmed a wildcard `Accept` or no header returns 204, while both `application/json` and `application/scim+json` are rejected. Only DELETE behaves this way; every other method requires a JSON `Accept`. The mock now reproduces the asymmetry.
 - **The bare CSA extension URN is not a valid `attributes` value.** `attributes=urn:...:CustomSecurityAttributes` returns `400 ... is not supported in the "attributes" or "excludedAttributes" query parameter`. Projection is set-granular only (`urn:...:CustomSecurityAttributes:<Set>`), so `attributeSets` is now required rather than optional. This closes the open question in footnote 1 of [REVIEW.md](../REVIEW.md).
 
-Confirmed working live: all three discovery endpoints, the full user lifecycle including `employeeLeaveDateTime`, `userName eq` filtering, group create/read/attribute-PATCH/delete, member add and remove, and `members.value eq` membership lookup.
+**All 18 tools are now verified against the live API.** Confirmed working: all three discovery endpoints, the full user lifecycle including `employeeLeaveDateTime`, `userName eq` filtering, group create/read/attribute-PATCH/delete, member add and remove, `members.value eq` membership lookup, and both CSA tools — a Boolean attribute assigned and read back with its type intact via `--csa-only`.
 
 ### Driving the live tenant conversationally
 

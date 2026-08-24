@@ -106,6 +106,7 @@ async function main(): Promise<void> {
       rehearse: { type: "boolean" },
       "allow-dry-run": { type: "boolean" },
       sweep: { type: "boolean" },
+      "csa-only": { type: "boolean" },
       help: { type: "boolean" },
     },
   });
@@ -251,6 +252,14 @@ async function main(): Promise<void> {
     displayName: `SCIM Smoke ${runId} User ${i}`,
   }));
   const groupName = `${GROUP_PREFIX}${runId}`;
+
+  if (values["csa-only"]) {
+    if (!csaSet || !csaAttr) fail(`--csa-only ${CSA_SETUP_HINT}`);
+    await runCsaOnly(call, identities[0]!, csaSet, csaAttr, csaValue);
+    await mcp.close().catch(() => {});
+    summarize({ sweepOnly: true });
+    return;
+  }
 
   process.stdout.write(
     `\nrun ${runId} will create:\n` +
@@ -496,6 +505,84 @@ async function cleanup(
   }
 }
 
+/**
+ * Just the two Custom Security Attribute tools, on one throwaway user —
+ * ~5 billed calls instead of ~21. Goes further than the full pass by reading
+ * the value back after assigning it, which is the only real proof that the
+ * PATCH path shape and the value's type were both accepted.
+ */
+async function runCsaOnly(
+  call: (
+    tool: string,
+    args: Record<string, unknown>,
+    check?: (out: ToolOutput) => string | undefined,
+  ) => Promise<ToolOutput | null>,
+  ident: { userName: string; mailNickname: string; displayName: string },
+  csaSet: string,
+  csaAttr: string,
+  csaValue: unknown,
+): Promise<void> {
+  process.stdout.write(
+    `\nCSA-only run on ${ident.userName}\n` +
+      `  assigning ${csaSet}.${csaAttr} = ${JSON.stringify(csaValue)} (${typeof csaValue})\n\n`,
+  );
+
+  const created = await call(
+    "provision_user",
+    {
+      userName: ident.userName,
+      password: newPassword(),
+      displayName: ident.displayName,
+      givenName: "Smoke",
+      familyName: "Csa",
+      mailNickname: ident.mailNickname,
+    },
+    (out) => (out.id ? undefined : "no id in response"),
+  );
+  if (!created?.id) {
+    skip("get_user_custom_security_attributes", "provision_user failed");
+    skip("update_user_custom_security_attributes", "provision_user failed");
+    return;
+  }
+  const id: string = created.id;
+
+  try {
+    // Before: proves the projection is accepted even with nothing assigned.
+    await call("get_user_custom_security_attributes", { id, attributeSets: [csaSet] });
+
+    const patched = await call("update_user_custom_security_attributes", {
+      id,
+      operations: [
+        { op: "add", path: `${SCHEMA_ENTRA_CSA}:${csaSet}.${csaAttr}`, value: csaValue },
+      ],
+    });
+
+    if (patched) {
+      // After: the round trip. A silent empty here would mean the PATCH was
+      // accepted but stored nothing.
+      const after = await call("get_user_custom_security_attributes", {
+        id,
+        attributeSets: [csaSet],
+      });
+      const returned = after?.[SCHEMA_ENTRA_CSA]?.[csaSet]?.[csaAttr];
+      if (returned === undefined) {
+        process.stdout.write(
+          `      note: read-back did NOT include ${csaSet}.${csaAttr} — ` +
+            `keys returned: ${Object.keys(after ?? {}).join(", ") || "none"}\n`,
+        );
+      } else {
+        const match = returned === csaValue ? "matches" : "DIFFERS from";
+        process.stdout.write(
+          `      note: read-back ${match} what was sent: ` +
+            `${JSON.stringify(returned)} (${typeof returned})\n`,
+        );
+      }
+    }
+  } finally {
+    await call("deprovision_user", { id });
+  }
+}
+
 /** Delete scim-smoke-* users stranded by an earlier crashed run. */
 async function sweep(
   call: (
@@ -623,6 +710,8 @@ Usage: npx tsx scripts/live-smoke.ts [options]
 Options:
   --confirm     Proceed without ENTRA_SCIM_LIVE=1 (~21 billed SCIM calls)
   --rehearse    Allow a dry-run or mock target; proves the script, not the API
+  --csa-only    Only the two Custom Security Attribute tools (~5 calls), with a
+                read-back to prove the value round-trips
   --sweep       List (and with --confirm, delete) stranded ${SMOKE_PREFIX}* users
   --help        Show this help
 
