@@ -63,7 +63,10 @@ describe("validator fixture replay", () => {
             method: step.request.method,
             headers: {
               Authorization: `Bearer ${TOKEN}`,
-              Accept: "application/json",
+              // Mirrors ScimClient: DELETE must not carry an Accept header.
+              ...(step.request.method.toUpperCase() === "DELETE"
+                ? {}
+                : { Accept: "application/json" }),
               ...(body !== undefined
                 ? { "Content-Type": "application/scim+json" }
                 : {}),

@@ -88,10 +88,12 @@ Dry-run results come back as a successful payload:
   "request": {
     "method": "DELETE",
     "url": "https://graph.microsoft.com/rp/scim/users/u-1",
-    "headers": { "Accept": "application/json" }
+    "headers": {}
   }
 }
 ```
+
+(DELETE carries no `Accept` header — the API rejects a specific JSON media type there. Every other method sends `Accept: application/json`.)
 
 Multi-request tools (e.g. `add_group_members` beyond 20 ids) surface only their first chunked request in dry-run.
 
@@ -140,7 +142,7 @@ For production, swap the secret for a certificate:
 | `update_user` | PATCH a user; blocks `remove` of mailNickname and enforces `[type eq "work"]` on address paths. |
 | `deprovision_user` | DELETE a user. |
 | `update_user_lifecycle` | Set lifecycle attrs (e.g. `employeeLeaveDateTime`). Requires `User-LifeCycleInfo.ReadWrite.All`. |
-| `get_user_custom_security_attributes` | Read a user's CSA extension only. Pass `attributeSets` for the documented set-qualified projection. |
+| `get_user_custom_security_attributes` | Read a user's CSAs, projected by attribute set. `attributeSets` is **required** — the API rejects the bare extension URN, and CSAs never come back from a plain `get_user`. |
 | `update_user_custom_security_attributes` | PATCH CSAs on a user. |
 | `list_groups` | List groups with the API's restricted filter set. |
 | `get_group` | Read a single group (members are NOT returned — use `list_groups` with a `members.value` filter). |
@@ -183,7 +185,14 @@ cp .env.example .env      # then fill in tenant id, client id, and the secret VA
 ### The smoke script
 
 ```bash
-ENTRA_SCIM_LIVE=1 npm run smoke:live
+ENTRA_SCIM_LIVE=1 npm run smoke:live              # bash
+$env:ENTRA_SCIM_LIVE=1; npm run smoke:live        # PowerShell
+```
+
+To pass flags, call the script directly - `npm run x -- --flag` does not forward reliably on Windows:
+
+```bash
+npx tsx scripts/live-smoke.ts --confirm
 ```
 
 One ordered pass over all 18 tools in roughly 21 billed calls. It creates two users and a group, exercises every read, PATCH and delete against them, then deletes them again. Highlights:
@@ -191,25 +200,34 @@ One ordered pass over all 18 tools in roughly 21 billed calls. It creates two us
 - **It refuses to run by accident.** Without `ENTRA_SCIM_LIVE=1` or `--confirm` it prints the tenant, endpoint and cost, then exits. With `ENTRA_SCIM_DRY_RUN` or `ENTRA_SCIM_STATIC_TOKEN` set it refuses outright unless you pass `--rehearse`, because such a run proves nothing about the live API.
 - **It does not stop at the first failure.** A failed step marks its dependents `skip` and everything independent still runs, so one run tells you which tools the live API accepts. Exit code is non-zero if anything failed.
 - **Test identities are obvious.** `scim-smoke-<runId>-1@<domain>` and a `SCIM Smoke <runId>` group.
-- **Cleanup is guaranteed.** Everything created is deleted in a `finally` block, and any leftovers are printed with their ids. Recover from a crashed run with `npm run smoke:live -- --sweep` to list stranded `scim-smoke-*` users, then add `--confirm` to delete them.
+- **Cleanup is guaranteed.** Everything created is deleted in a `finally` block, and any leftovers are printed with their ids. Recover from a crashed run with `npx tsx scripts/live-smoke.ts --sweep` to list stranded `scim-smoke-*` users, then add `--confirm` to delete them. The sweep will never touch an account that lacks the `scim-smoke-` prefix.
 
-Rehearse at zero cost before spending anything — this validates the script, not the API:
+The two Custom Security Attribute tools report `skip` until an attribute set exists in the tenant (**Entra portal -> Protection -> Custom security attributes**) and `ENTRA_SCIM_SMOKE_CSA_SET` / `ENTRA_SCIM_SMOKE_CSA_ATTR` name it. Everything else runs unattended.
+
+Rehearse at zero cost before spending anything - this validates the script, not the API:
 
 ```bash
 # no network at all
-ENTRA_SCIM_DRY_RUN=1 npm run smoke:live -- --rehearse
+ENTRA_SCIM_DRY_RUN=1 npx tsx scripts/live-smoke.ts --rehearse
 
 # or against the local mock: start it in one shell...
 npm run mock
 # ...and in another, aim the script at it
 export ENTRA_SCIM_BASE_URL=http://127.0.0.1:8990
 export ENTRA_SCIM_STATIC_TOKEN=dev-token
-npm run smoke:live -- --rehearse
+npx tsx scripts/live-smoke.ts --rehearse
 ```
 
-The mock rehearsal is the one worth doing: it exercises real HTTP, real ids and the full create/patch/delete ordering, so it catches sequencing and cleanup bugs before you spend anything.
+The mock rehearsal is the one worth doing: it exercises real HTTP, real ids and the full create/patch/delete ordering, so it catches sequencing and cleanup bugs before you spend anything. It is not a substitute for the live run — the first live pass found two bugs no mock run had caught (see [What the live tenant taught us](#what-the-live-tenant-taught-us)).
 
-`update_user_custom_security_attributes` reports `skip` unless `ENTRA_SCIM_SMOKE_CSA_SET` and `ENTRA_SCIM_SMOKE_CSA_ATTR` are set, since it needs an attribute set that already exists in the tenant (**Entra portal → Protection → Custom security attributes**).
+### What the live tenant taught us
+
+The first live pass (2026-08-24, tenant with SCIM inbound GA) found two things no mock or dry-run had caught. Both are fixed, with regression tests:
+
+- **DELETE must not carry an `Accept` header.** The API answers `400 Accept header application/json is invalid` — so `deprovision_user` and `delete_group` had never worked against a real tenant. Probing confirmed a wildcard `Accept` or no header returns 204, while both `application/json` and `application/scim+json` are rejected. Only DELETE behaves this way; every other method requires a JSON `Accept`. The mock now reproduces the asymmetry.
+- **The bare CSA extension URN is not a valid `attributes` value.** `attributes=urn:...:CustomSecurityAttributes` returns `400 ... is not supported in the "attributes" or "excludedAttributes" query parameter`. Projection is set-granular only (`urn:...:CustomSecurityAttributes:<Set>`), so `attributeSets` is now required rather than optional. This closes the open question in footnote 1 of [REVIEW.md](../REVIEW.md).
+
+Confirmed working live: all three discovery endpoints, the full user lifecycle including `employeeLeaveDateTime`, `userName eq` filtering, group create/read/attribute-PATCH/delete, member add and remove, and `members.value eq` membership lookup.
 
 ### Driving the live tenant conversationally
 

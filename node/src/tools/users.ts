@@ -299,22 +299,21 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
     {
       title: "Get user Custom Security Attributes",
       description:
-        "Fetch only the CustomSecurityAttributes extension for a user. Pass attributeSets to project specific attribute sets (the form the API documents); omitting it requests the whole extension URN, which the API may ignore. Requires CustomSecAttributeAssignment.Read.All (covered by CustomSecAttributeAssignment.ReadWrite.All).",
+        "Fetch Custom Security Attributes for a user, projected by attribute set. attributeSets is required — the API rejects the bare extension URN with a 400. CSAs never come back from a plain get_user; they are only returned when named explicitly here. Requires CustomSecAttributeAssignment.Read.All (covered by CustomSecAttributeAssignment.ReadWrite.All).",
       inputSchema: {
         id: z.string().min(1),
         attributeSets: z
           .array(z.string().min(1))
           .min(1)
-          .optional()
           .describe(
-            'Attribute set names to project, e.g. ["Engineering"]. Recommended: the documented projection form is urn:...:CustomSecurityAttributes:<Set>.',
+            'Attribute set names to project, e.g. ["Engineering"]. Projection is set-granular: the API documents urn:...:CustomSecurityAttributes:<Set>, not individual attribute names.',
           ),
       },
     },
-    wrapTool(async (args: { id: string; attributeSets?: string[] }) => {
-      const attributes = args.attributeSets?.length
-        ? args.attributeSets.map((set) => `${SCHEMA_ENTRA_CSA}:${set}`).join(",")
-        : SCHEMA_ENTRA_CSA;
+    wrapTool(async (args: { id: string; attributeSets: string[] }) => {
+      const attributes = args.attributeSets
+        .map((set) => `${SCHEMA_ENTRA_CSA}:${set}`)
+        .join(",");
       return client.request<ScimUser>({
         method: "GET",
         path: `/users/${encodeURIComponent(args.id)}`,

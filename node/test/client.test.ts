@@ -40,6 +40,24 @@ describe("ScimClient", () => {
     expect(init.body).toBeUndefined();
   });
 
+  // The live API rejects any specific JSON media type on DELETE with
+  // "400 Accept header application/json is invalid" (verified against a real
+  // tenant 2026-08-24), which broke deprovision_user and delete_group.
+  it("sends no Accept header on DELETE", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+    const client = new ScimClient({
+      credential: fakeCredential("abc"),
+      fetcher: fetcher as unknown as typeof fetch,
+    });
+
+    await client.request({ method: "DELETE", path: "/users/u-1" });
+
+    const headers = fetcher.mock.calls[0]![1]!.headers as Record<string, string>;
+    expect(headers.Authorization).toBe("Bearer abc");
+    expect(headers.Accept).toBeUndefined();
+    expect(headers["Content-Type"]).toBeUndefined();
+  });
+
   it("sets application/scim+json on writes", async () => {
     const fetcher = vi.fn(async () => jsonResponse(201, { id: "u-1" }));
     const client = new ScimClient({

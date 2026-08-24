@@ -49,7 +49,7 @@ export class ScimClient {
 
     if (this.dryRun) {
       // Before token acquisition: dry-run must never contact Azure AD.
-      const dryHeaders: Record<string, string> = { Accept: "application/json" };
+      const dryHeaders: Record<string, string> = { ...acceptHeader(opts.method) };
       if (opts.body !== undefined) {
         dryHeaders["Content-Type"] = "application/scim+json";
       }
@@ -68,7 +68,7 @@ export class ScimClient {
 
     const headers: Record<string, string> = {
       Authorization: `Bearer ${token.token}`,
-      Accept: "application/json",
+      ...acceptHeader(opts.method),
     };
     let serializedBody: string | undefined;
     if (opts.body !== undefined) {
@@ -159,6 +159,18 @@ export class ScimClient {
 
 function isIdempotent(method: HttpMethod): boolean {
   return method === "GET" || method === "DELETE";
+}
+
+/**
+ * DELETE must not carry an Accept header. A 204 has no body, and the live API
+ * rejects any specific JSON media type on DELETE with
+ * `400 Accept header application/json is invalid` (verified against a real
+ * tenant 2026-08-24; a wildcard Accept and no Accept at all both return 204).
+ * The documented DELETE examples send no Accept header either. Every other
+ * method needs it — the API 400s when a JSON Accept is missing.
+ */
+function acceptHeader(method: HttpMethod): { Accept?: string } {
+  return method === "DELETE" ? {} : { Accept: "application/json" };
 }
 
 function safeParseJson(text: string): unknown {

@@ -32,7 +32,8 @@ function call(
     method,
     headers: {
       Authorization: `Bearer ${TOKEN}`,
-      Accept: "application/json",
+      // Mirrors ScimClient: DELETE must not carry an Accept header.
+      ...(method.toUpperCase() === "DELETE" ? {} : { Accept: "application/json" }),
       ...(body !== undefined ? { "Content-Type": "application/scim+json" } : {}),
       ...headers,
     },
@@ -76,6 +77,21 @@ describe("auth and query hygiene", () => {
   it("400s when Accept does not allow JSON", async () => {
     const res = await call("GET", "/users", undefined, { Accept: "text/html" });
     expect(res.status).toBe(400);
+  });
+
+  // The live API inverts the rule on DELETE: a specific JSON media type is
+  // rejected, only a wildcard or no header at all is accepted.
+  it("400s on DELETE with a specific JSON Accept, but allows a wildcard", async () => {
+    const created = await call("POST", "/Users", newUser("accept.probe@contoso.local"));
+    const { id } = (await created.json()) as { id: string };
+
+    const rejected = await call("DELETE", `/Users/${id}`, undefined, {
+      Accept: "application/json",
+    });
+    expect(rejected.status).toBe(400);
+
+    const allowed = await call("DELETE", `/Users/${id}`, undefined, { Accept: "*/*" });
+    expect(allowed.status).toBe(204);
   });
 
   it("404s unknown endpoints", async () => {

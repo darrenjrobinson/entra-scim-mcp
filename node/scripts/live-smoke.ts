@@ -14,9 +14,12 @@
  * dependents SKIP and everything independent still runs, so one run gives a
  * complete picture of which tools the live API accepts.
  *
- *   ENTRA_SCIM_LIVE=1 npm run smoke:live
- *   npm run smoke:live -- --rehearse          # dry-run / mock target, zero cost
- *   npm run smoke:live -- --sweep --confirm   # delete orphans from a crash
+ *   ENTRA_SCIM_LIVE=1 npm run smoke:live              # bash
+ *   $env:ENTRA_SCIM_LIVE=1; npm run smoke:live        # PowerShell
+ *
+ * Pass flags by calling tsx directly — npm swallows them on Windows:
+ *   npx tsx scripts/live-smoke.ts --rehearse          # dry-run / mock, zero cost
+ *   npx tsx scripts/live-smoke.ts --sweep --confirm   # delete orphans from a crash
  */
 import { randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
@@ -51,6 +54,9 @@ const ALL_TOOLS = [
   "add_group_members",
   "remove_group_member",
 ] as const;
+
+const CSA_SETUP_HINT =
+  "needs ENTRA_SCIM_SMOKE_CSA_SET + ENTRA_SCIM_SMOKE_CSA_ATTR, and an attribute set that exists in the tenant (Entra portal > Protection > Custom security attributes)";
 
 const SMOKE_PREFIX = "scim-smoke-";
 const GROUP_PREFIX = "SCIM Smoke ";
@@ -144,7 +150,22 @@ async function main(): Promise<void> {
     }
   }
 
-  const auth = loadAuthFromEnv(process.env, { baseUrl, dryRun });
+  // A static token cannot be combined with a real credential, and once .env
+  // holds a live secret that guardrail would block every mock rehearsal. In
+  // rehearsal the real credential is exactly what we do not want, so set it
+  // aside rather than weakening the guardrail.
+  let authEnv = process.env;
+  if (rehearse && staticToken) {
+    const { ENTRA_CLIENT_SECRET, ENTRA_CLIENT_CERT_PATH, ...rest } = process.env;
+    if (ENTRA_CLIENT_SECRET?.trim() || ENTRA_CLIENT_CERT_PATH?.trim()) {
+      process.stdout.write(
+        "note: ignoring the credential in .env for this rehearsal — the static token targets the mock\n",
+      );
+    }
+    authEnv = rest;
+  }
+
+  const auth = loadAuthFromEnv(authEnv, { baseUrl, dryRun });
   if (!rehearse && auth.mode === "static") {
     fail(
       "Refusing to run: resolved auth mode is 'static'. A live run needs a client secret or certificate.",
@@ -323,22 +344,16 @@ async function main(): Promise<void> {
         employeeLeaveDateTime: "2030-12-31T17:00:00Z",
       });
 
-      // Bare-URN projection: the exact case REVIEW.md footnote 1 says still
-      // needs a live-tenant verification.
-      const bare = await call("get_user_custom_security_attributes", { id: user1 });
-      if (bare && !bare.dryRun) {
-        const present = Object.prototype.hasOwnProperty.call(bare, SCHEMA_ENTRA_CSA);
-        process.stdout.write(
-          `      note: bare-URN CSA projection ${present ? "returned" : "did NOT return"} the ` +
-            `CustomSecurityAttributes key (keys: ${Object.keys(bare).join(", ") || "none"})\n`,
-        );
-      }
-
+      // Both CSA tools need an attribute set that already exists in the
+      // tenant. attributeSets is required: the bare extension URN is rejected
+      // with a 400 (settled on the live tenant 2026-08-24).
       if (csaSet) {
         await call("get_user_custom_security_attributes", {
           id: user1,
           attributeSets: [csaSet],
         });
+      } else {
+        skip("get_user_custom_security_attributes", CSA_SETUP_HINT);
       }
       if (csaSet && csaAttr) {
         await call("update_user_custom_security_attributes", {
@@ -348,10 +363,7 @@ async function main(): Promise<void> {
           ],
         });
       } else {
-        skip(
-          "update_user_custom_security_attributes",
-          "set ENTRA_SCIM_SMOKE_CSA_SET + ENTRA_SCIM_SMOKE_CSA_ATTR (create them first in Entra portal > Protection > Custom security attributes)",
-        );
+        skip("update_user_custom_security_attributes", CSA_SETUP_HINT);
       }
     }
 
@@ -586,7 +598,8 @@ function fail(message: string): never {
 
 const HELP = `live-smoke — exercise all ${ALL_TOOLS.length} MCP tools against a real Entra SCIM tenant
 
-Usage: npm run smoke:live [-- options]
+Usage: npx tsx scripts/live-smoke.ts [options]
+   or: npm run smoke:live            (no flags — npm swallows them on Windows)
 
 Options:
   --confirm     Proceed without ENTRA_SCIM_LIVE=1 (~21 billed SCIM calls)

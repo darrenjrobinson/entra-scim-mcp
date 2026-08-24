@@ -86,17 +86,24 @@ async function handle(
       throw new MockScimError(401, "Access token is empty or invalid.");
     }
 
-    // The real API 400s when Accept doesn't allow JSON.
+    const method = (req.method ?? "GET").toUpperCase();
+
+    // The real API 400s when Accept doesn't allow JSON — except on DELETE,
+    // which rejects any *specific* JSON media type and only tolerates a
+    // wildcard or no header at all (verified against a live tenant
+    // 2026-08-24). Reproducing that asymmetry is what makes the mock able to
+    // catch a client sending Accept on DELETE.
     const accept = req.headers.accept;
-    if (
-      !ctx.validatorCompat &&
-      accept !== undefined &&
-      !/application\/(scim\+)?json|\*\/\*/i.test(accept)
-    ) {
-      throw new MockScimError(400, "HTTP Accept header for application/json is missing.");
+    if (!ctx.validatorCompat && accept !== undefined) {
+      if (method === "DELETE") {
+        if (!/^\s*\*\/\*\s*$/.test(accept)) {
+          throw new MockScimError(400, `Accept header ${accept} is invalid.`);
+        }
+      } else if (!/application\/(scim\+)?json|\*\/\*/i.test(accept)) {
+        throw new MockScimError(400, "HTTP Accept header for application/json is missing.");
+      }
     }
 
-    const method = (req.method ?? "GET").toUpperCase();
     if (method === "POST" || method === "PATCH") {
       requestBody = await readJsonBody(req);
     }

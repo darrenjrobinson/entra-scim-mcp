@@ -72,18 +72,20 @@ describe("get_user_custom_security_attributes", () => {
     );
   });
 
-  it("falls back to the whole extension URN when attributeSets is omitted", async () => {
+  // The bare extension URN is rejected by the live API with
+  // "400 The specified attribute urn:...:CustomSecurityAttributes is not
+  // supported in the attributes query parameter" (verified 2026-08-24), so
+  // attributeSets is required rather than falling back to it.
+  it("refuses to call the API when attributeSets is omitted", async () => {
     const fetcher = vi.fn(async () => okUser());
     const mcp = await connectedClient(fetcher as unknown as typeof fetch);
 
-    await mcp.callTool({
+    const result = await mcp.callTool({
       name: "get_user_custom_security_attributes",
       arguments: { id: "u-1" },
     });
 
-    const url = String(fetcher.mock.calls[0]![0]);
-    expect(url).toBe(
-      `https://graph.microsoft.com/rp/scim/users/u-1?attributes=${encodeURIComponent(SCHEMA_ENTRA_CSA)}`,
-    );
+    expect(result.isError).toBe(true);
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
