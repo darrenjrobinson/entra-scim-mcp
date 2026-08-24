@@ -51,6 +51,13 @@ Note the validator expects RFC-standard SCIM, while Entra's inbound API has stri
 
 6. Commit the fixture. Raw captures under `captures/` are gitignored working data.
 
+## Committed fixtures
+
+- `user-crud.json` — small hand-checked walkthrough.
+- `validator-user-group.json` — a real 112-request Microsoft SCIM Validator session (User + Group suites, 2026-08-24) replayed against a freshly booted mock. This is the regression net for everything the validator run taught us: RFC address path filters, boolean/string `primary` coercion, `manager` normalisation, duplicate-group 409, and the password-free compat schema. If a change to the mock breaks any of it, this fixture fails without needing a tunnel or a browser.
+
+A capture may contain more than one validator run (each starts with `GET /Schemas`). Trim it to a single run before converting — two concatenated runs double the fixture size for no extra coverage.
+
 ## Fixture format
 
 ```json
