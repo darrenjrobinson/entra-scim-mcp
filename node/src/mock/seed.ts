@@ -43,12 +43,61 @@ export function demoSeed(): SeedData {
   };
 }
 
-/** Load seed data from a JSON file shaped like SeedData ({users, groups}). */
+/**
+ * Load seed data from a JSON file shaped like SeedData ({users, groups}).
+ *
+ * The shape is checked rather than asserted. A cast let anything through to
+ * MockStore, where the wrong type surfaced as a SCIM 400 raised from inside a
+ * store method — an error about a request, for a file, at a CLI that had not
+ * started serving yet. Every rejection here names the file and the key.
+ */
 export async function loadSeedFile(path: string): Promise<SeedData> {
   const text = await readFile(path, "utf8");
-  const parsed = JSON.parse(text) as SeedData;
-  if (!parsed || typeof parsed !== "object") {
-    throw new Error(`Seed file ${path} must contain a JSON object.`);
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`Seed file ${path} is not valid JSON: ${detail}`);
   }
-  return parsed;
+
+  // `typeof null` is "object", and so is an array; neither is a SeedData.
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(
+      `Seed file ${path} must contain a JSON object with optional "users" and "groups" arrays.`,
+    );
+  }
+
+  const record = parsed as Record<string, unknown>;
+  const users = objectArray(path, "users", record.users);
+  const groups = objectArray(path, "groups", record.groups);
+  if (!users && !groups) {
+    throw new Error(
+      `Seed file ${path} has neither "users" nor "groups"; use --no-seed for an empty tenant.`,
+    );
+  }
+
+  return {
+    ...(users ? { users: users as SeedData["users"] } : {}),
+    ...(groups ? { groups: groups as SeedData["groups"] } : {}),
+  };
+}
+
+/** Validate an optional top-level key as an array of JSON objects. */
+function objectArray(
+  path: string,
+  key: string,
+  value: unknown,
+): Record<string, unknown>[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error(`Seed file ${path}: "${key}" must be an array.`);
+  }
+  value.forEach((entry: unknown, i: number) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`Seed file ${path}: "${key}[${i}]" must be a JSON object.`);
+    }
+  });
+  return value as Record<string, unknown>[];
 }
