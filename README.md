@@ -292,4 +292,4 @@ The server has no test dependency on a real tenant. Unit tests cover the filter,
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
