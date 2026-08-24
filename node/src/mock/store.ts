@@ -39,7 +39,7 @@ export class MockStore {
     const id = randomUUID();
     const now = isoNow();
     const user: StoredUser = {
-      ...structuredClone(input),
+      ...normalizePrimaryFlags(structuredClone(input)),
       id,
       meta: {
         resourceType: "user",
@@ -81,7 +81,7 @@ export class MockStore {
       ...updated.meta,
       lastModified: isoNow(),
     };
-    this.users.set(updated.id, updated);
+    this.users.set(updated.id, normalizePrimaryFlags(updated));
     this.userNameIndex.set(newName.toLowerCase(), updated.id);
   }
 
@@ -229,6 +229,28 @@ export class MockStore {
       );
     }
   }
+}
+
+/**
+ * RFC 7643 types `primary` on multi-valued attributes as boolean, but the
+ * Microsoft SCIM Validator sends it as the string "true" and then looks the
+ * element up with `primary eq true` when verifying what it fetched back — so
+ * echoing the string verbatim makes correctly-applied values read as missing.
+ * Coerce on the way into the store, for every multi-valued attribute.
+ */
+function normalizePrimaryFlags<T extends Record<string, unknown>>(record: T): T {
+  for (const value of Object.values(record)) {
+    if (!Array.isArray(value)) continue;
+    for (const element of value) {
+      if (!element || typeof element !== "object") continue;
+      const entry = element as { primary?: unknown };
+      if (typeof entry.primary !== "string") continue;
+      const flag = entry.primary.trim().toLowerCase();
+      if (flag === "true") entry.primary = true;
+      else if (flag === "false") entry.primary = false;
+    }
+  }
+  return record;
 }
 
 function isoNow(): string {

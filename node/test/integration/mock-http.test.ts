@@ -450,6 +450,29 @@ describe("validator-compat mode", () => {
     expect((await call("POST", "/Groups", group)).status).toBe(201);
   });
 
+  // RFC 7643 types `primary` as boolean. The validator sends the string
+  // "true", then locates the element with `primary eq true` when verifying the
+  // resource it fetched back — so echoing the string makes applied values read
+  // as missing.
+  it("coerces a string primary flag to a boolean on the way into the store", async () => {
+    const created = await call("POST", "/Users", {
+      ...newUser("primary.coerce@contoso.local"),
+      emails: [{ primary: "true", value: "a@b.c" }],
+      addresses: [{ primary: "true", locality: "OLD" }],
+    });
+    const body = (await created.json()) as any;
+    expect(body.emails[0].primary).toBe(true);
+    expect(body.addresses[0].primary).toBe(true);
+
+    // And it survives a PATCH round trip.
+    await call("PATCH", `/Users/${body.id}`, {
+      schemas: [SCHEMA_PATCH_OP],
+      Operations: [{ op: "replace", path: "displayName", value: "Renamed" }],
+    });
+    const after = (await (await call("GET", `/Users/${body.id}`)).json()) as any;
+    expect(after.emails[0].primary).toBe(true);
+  });
+
   it("returns members, supports startIndex, and 200s on PATCH", async () => {
     const compat = createMockServer({ token: TOKEN, validatorCompat: true });
     const { url } = await compat.listen(0);
