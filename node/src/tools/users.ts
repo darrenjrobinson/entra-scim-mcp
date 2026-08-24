@@ -14,6 +14,7 @@ import {
   type ScimListResponse,
   type ScimPatchOperation,
   type ScimUser,
+  type ScimUserCreatePayload,
 } from "../scim/types.js";
 
 const filterClauseSchema = z.object({
@@ -193,7 +194,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
       const schemas = [SCHEMA_USER_CORE, SCHEMA_ENTRA_USER];
       if (Object.keys(enterprise).length > 0) schemas.push(SCHEMA_ENTERPRISE_USER);
 
-      const body: ScimUser = {
+      const body: ScimUserCreatePayload = {
         schemas,
         userName: args.userName,
         password: args.password,

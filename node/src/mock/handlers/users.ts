@@ -1,5 +1,5 @@
 import { FilterValidationError } from "../../scim/errors.js";
-import { SCHEMA_ENTRA_USER, type ScimUser } from "../../scim/types.js";
+import { SCHEMA_ENTRA_USER, type ScimUserCreatePayload } from "../../scim/types.js";
 import { MockScimError } from "../errors.js";
 import { parseFilter, userMatches } from "../filter-parse.js";
 import { applyUserPatch } from "../patch-apply.js";
@@ -66,7 +66,10 @@ export function getUser(
   };
 }
 
-const REQUIRED_CREATE_ATTRS: { label: string; present: (u: ScimUser) => boolean }[] = [
+const REQUIRED_CREATE_ATTRS: {
+  label: string;
+  present: (u: ScimUserCreatePayload) => boolean;
+}[] = [
   { label: "userName", present: (u) => nonEmpty(u.userName) },
   { label: "password", present: (u) => nonEmpty(u.password) },
   { label: "displayName", present: (u) => nonEmpty(u.displayName) },
@@ -83,7 +86,7 @@ export function createUser(ctx: HandlerContext, body: unknown): HandlerResponse 
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new MockScimError(400, "Request body must be a JSON object.", "invalidSyntax");
   }
-  const user = body as ScimUser;
+  const user = body as ScimUserCreatePayload;
   // The Entra inbound API's required set is far stricter than RFC 7643, which
   // marks only userName required. The SCIM Validator generates RFC-standard
   // users (and cannot send a password at all), so compat mode enforces the RFC

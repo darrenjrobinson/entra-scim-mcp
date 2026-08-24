@@ -22,6 +22,13 @@ export interface ScimMeta {
   version?: string;
 }
 
+/**
+ * Both casings of the resources array are declared on purpose, and neither is
+ * dead: the Entra SCIM API answers with canonical `Resources` on some
+ * endpoints and lowercase `resources` on others. Do not read either key
+ * directly — put the payload through normalizeListResponse in ./pagination.js,
+ * which collapses the two.
+ */
 export interface ScimListResponse<T> {
   schemas: string[];
   totalResults?: number;
@@ -97,12 +104,23 @@ export interface EntraGroupExtension {
   securityIdentifier?: string;
 }
 
+/**
+ * A user as the API *returns* it.
+ *
+ * `password` is deliberately absent. The API never echoes one, and leaving it
+ * off the read type means no code path hands a caller a resource whose type
+ * advertises a secret. Writes use ScimUserCreatePayload.
+ *
+ * The index signature below means this is a convention the compiler can help
+ * with, not a wall it enforces — `password` is still reachable as `unknown`,
+ * as any URN-qualified key must be. The guarantee is the runtime one:
+ * stripSecrets in ../tools/util.js, on the way out to the model.
+ */
 export interface ScimUser {
   schemas: string[];
   id?: string;
   externalId?: string;
   userName?: string;
-  password?: string;
   active?: boolean;
   displayName?: string;
   name?: ScimName;
@@ -115,6 +133,14 @@ export interface ScimUser {
   [SCHEMA_ENTRA_USER]?: EntraUserExtension;
   [SCHEMA_ENTRA_CSA]?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+/**
+ * A user as the API *accepts* it on POST /users. `password` is declared only
+ * here, so a value typed for writing cannot be returned without saying so.
+ */
+export interface ScimUserCreatePayload extends ScimUser {
+  password?: string;
 }
 
 export interface ScimGroupMember {

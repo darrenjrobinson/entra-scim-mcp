@@ -1,8 +1,16 @@
 import { randomUUID } from "node:crypto";
-import type { ScimGroup, ScimGroupMember, ScimUser } from "../scim/types.js";
+import type {
+  ScimGroup,
+  ScimGroupMember,
+  ScimUserCreatePayload,
+} from "../scim/types.js";
 import { MockScimError } from "./errors.js";
 
-export interface StoredUser extends ScimUser {
+/**
+ * Held with the password still on it — the store is the write side. Reads go
+ * out through sanitizeUser in ./handlers/users.js, which strips it.
+ */
+export interface StoredUser extends ScimUserCreatePayload {
   id: string;
 }
 
@@ -13,7 +21,7 @@ export interface StoredGroup extends ScimGroup {
 }
 
 export interface SeedData {
-  users?: ScimUser[];
+  users?: ScimUserCreatePayload[];
   groups?: ScimGroup[];
 }
 
@@ -30,7 +38,7 @@ export class MockStore {
 
   // -- users ----------------------------------------------------------------
 
-  createUser(input: ScimUser): StoredUser {
+  createUser(input: ScimUserCreatePayload): StoredUser {
     const userName = input.userName;
     if (typeof userName !== "string" || userName.length === 0) {
       throw new MockScimError(400, "userName is required.", "invalidValue");
