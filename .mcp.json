@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "entra-scim-live": {
+      "command": "node",
+      "args": [
+        "node/scripts/dev-server.mjs"
+      ]
+    }
+  }
+}

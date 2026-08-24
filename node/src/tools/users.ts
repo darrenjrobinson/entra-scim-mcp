@@ -299,7 +299,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
     {
       title: "Get user Custom Security Attributes",
       description:
-        "Fetch only the CustomSecurityAttributes extension for a user. Pass attributeSets to project specific attribute sets (the form the API documents); omitting it requests the whole extension URN, which the API may ignore. Requires CustomSecAttributeAssignment.Read.All.",
+        "Fetch only the CustomSecurityAttributes extension for a user. Pass attributeSets to project specific attribute sets (the form the API documents); omitting it requests the whole extension URN, which the API may ignore. Requires CustomSecAttributeAssignment.Read.All (covered by CustomSecAttributeAssignment.ReadWrite.All).",
       inputSchema: {
         id: z.string().min(1),
         attributeSets: z

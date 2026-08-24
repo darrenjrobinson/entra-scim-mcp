@@ -162,6 +162,63 @@ The Entra SCIM API has constraints that are easy to miss. The tool layer rejects
 
 Errors come back to the agent as a structured payload with `status`, `scimType`, and `detail`.
 
+## Testing against a real tenant
+
+The test suite never touches a real tenant. To verify the tools against live Entra, put credentials in a gitignored `.env` and run the smoke script.
+
+```bash
+cd node
+cp .env.example .env      # then fill in tenant id, client id, and the secret VALUE
+```
+
+`.env` is read **only** by the scripts in `scripts/`. The published server always reads `process.env`, so it can never pick up a stray `.env` from whatever directory an MCP client launches it in. A variable already set in the environment always wins over the file.
+
+| Var | Purpose |
+| --- | --- |
+| `ENTRA_SCIM_SMOKE_DOMAIN` | Verified domain the throwaway `scim-smoke-*` identities are created in |
+| `ENTRA_SCIM_SMOKE_CSA_SET` | Attribute set name; set it to cover the two Custom Security Attribute tools |
+| `ENTRA_SCIM_SMOKE_CSA_ATTR` | Attribute name within that set |
+| `ENTRA_SCIM_SMOKE_CSA_VALUE` | Optional value to assign; defaults to a string, so use this if the attribute is an int or boolean |
+
+### The smoke script
+
+```bash
+ENTRA_SCIM_LIVE=1 npm run smoke:live
+```
+
+One ordered pass over all 18 tools in roughly 21 billed calls. It creates two users and a group, exercises every read, PATCH and delete against them, then deletes them again. Highlights:
+
+- **It refuses to run by accident.** Without `ENTRA_SCIM_LIVE=1` or `--confirm` it prints the tenant, endpoint and cost, then exits. With `ENTRA_SCIM_DRY_RUN` or `ENTRA_SCIM_STATIC_TOKEN` set it refuses outright unless you pass `--rehearse`, because such a run proves nothing about the live API.
+- **It does not stop at the first failure.** A failed step marks its dependents `skip` and everything independent still runs, so one run tells you which tools the live API accepts. Exit code is non-zero if anything failed.
+- **Test identities are obvious.** `scim-smoke-<runId>-1@<domain>` and a `SCIM Smoke <runId>` group.
+- **Cleanup is guaranteed.** Everything created is deleted in a `finally` block, and any leftovers are printed with their ids. Recover from a crashed run with `npm run smoke:live -- --sweep` to list stranded `scim-smoke-*` users, then add `--confirm` to delete them.
+
+Rehearse at zero cost before spending anything — this validates the script, not the API:
+
+```bash
+# no network at all
+ENTRA_SCIM_DRY_RUN=1 npm run smoke:live -- --rehearse
+
+# or against the local mock: start it in one shell...
+npm run mock
+# ...and in another, aim the script at it
+export ENTRA_SCIM_BASE_URL=http://127.0.0.1:8990
+export ENTRA_SCIM_STATIC_TOKEN=dev-token
+npm run smoke:live -- --rehearse
+```
+
+The mock rehearsal is the one worth doing: it exercises real HTTP, real ids and the full create/patch/delete ordering, so it catches sequencing and cleanup bugs before you spend anything.
+
+`update_user_custom_security_attributes` reports `skip` unless `ENTRA_SCIM_SMOKE_CSA_SET` and `ENTRA_SCIM_SMOKE_CSA_ATTR` are set, since it needs an attribute set that already exists in the tenant (**Entra portal → Protection → Custom security attributes**).
+
+### Driving the live tenant conversationally
+
+The repo-root `.mcp.json` registers the server with Claude Code using `scripts/dev-server.mjs`, which loads `node/.env` and starts the built server — so no secret goes into a committed config file. Build first, then restart your client:
+
+```bash
+cd node && npm run build
+```
+
 ## Development
 
 ```bash
@@ -173,7 +230,7 @@ npm run mock            # run the local mock server (tsx, no build needed)
 npm run mock:capture    # mock in validator-compat mode, capturing traffic to captures/
 ```
 
-The server has no test dependency on a real tenant. Unit tests cover the filter, patch, query, and client layers; integration tests boot the in-process mock server and drive **every MCP tool end-to-end** over real HTTP (`test/integration/`). Captured [SCIM Validator](docs/scim-validator.md) sessions convert into replay fixtures with `npm run fixtures:convert`.
+The server has no test dependency on a real tenant. Unit tests cover the filter, patch, query, and client layers; integration tests boot the in-process mock server and drive **every MCP tool end-to-end** over real HTTP (`test/integration/`). Captured [SCIM Validator](docs/scim-validator.md) sessions convert into replay fixtures with `npm run fixtures:convert`. For the one thing none of that can prove — that the live API accepts these payloads — see [Testing against a real tenant](#testing-against-a-real-tenant).
 
 ## License
 

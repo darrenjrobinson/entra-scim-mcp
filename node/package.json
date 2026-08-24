@@ -23,6 +23,8 @@
     "mock": "tsx src/mock/cli.ts",
     "mock:capture": "tsx src/mock/cli.ts --validator-compat --capture captures/validator-session.jsonl",
     "fixtures:convert": "tsx scripts/captures-to-fixtures.ts",
+    "smoke:live": "tsx scripts/live-smoke.ts",
+    "dev:env": "node scripts/dev-server.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
