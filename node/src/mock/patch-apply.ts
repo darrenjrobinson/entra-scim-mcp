@@ -1,5 +1,6 @@
 import { PatchValidationError } from "../scim/errors.js";
 import {
+  parsePatchEnvelopeOnly,
   touchesMembers,
   validateGroupPatchBody,
   validateUserPatchBody,
@@ -29,13 +30,40 @@ const GROUP_CORE_URNS = [SCHEMA_GROUP_CORE];
  * Validate and apply a user PATCH body, returning the updated copy. The
  * caller persists it (store.putUser re-checks userName uniqueness).
  */
-export function applyUserPatch(user: StoredUser, body: unknown): StoredUser {
-  const ops = validateUserPatchBody(body);
+export function applyUserPatch(
+  user: StoredUser,
+  body: unknown,
+  validatorCompat = false,
+): StoredUser {
+  // The Entra operation guards (addresses must use [type eq "work"], no
+  // mailNickname removal) are not RFC rules. The SCIM Validator sends standard
+  // shapes like addresses[primary eq true].locality, so compat mode parses the
+  // envelope without them.
+  const ops = validatorCompat
+    ? parsePatchEnvelopeOnly(body)
+    : validateUserPatchBody(body);
   const updated = structuredClone(user);
   for (const op of ops) {
     applyOperation(updated, op, USER_URNS, USER_CORE_URNS);
   }
+  if (validatorCompat) normalizeManager(updated);
   return updated;
+}
+
+/**
+ * RFC 7643 models enterprise `manager` as complex with a `value` sub-attribute,
+ * and the SCIM Validator PATCHes it as a bare id string then asserts
+ * `manager.value` on read-back. Normalise so the round trip holds. An empty
+ * string is the validator's "remove manager" form and is left untouched.
+ */
+function normalizeManager(user: StoredUser): void {
+  const ext = user[SCHEMA_ENTERPRISE_USER] as
+    | { manager?: unknown }
+    | undefined;
+  if (!ext || typeof ext !== "object") return;
+  if (typeof ext.manager === "string" && ext.manager.length > 0) {
+    ext.manager = { value: ext.manager };
+  }
 }
 
 /**
@@ -358,7 +386,15 @@ function elementMatches(element: unknown, conditions: FilterCondition[]): boolea
     const key = resolveKey(record, cond.field);
     if (!key) return false;
     const actual = record[key];
-    if (typeof cond.value === "boolean") return actual === cond.value;
+    if (typeof cond.value === "boolean") {
+      // The SCIM Validator writes primary as the string "true" then filters
+      // with `primary eq true`, so a strict compare finds no target. JSON
+      // values arrive untyped over the wire; match either form.
+      if (typeof actual === "string") {
+        return actual.toLowerCase() === String(cond.value);
+      }
+      return actual === cond.value;
+    }
     return (
       typeof actual === "string" &&
       actual.toLowerCase() === cond.value.toLowerCase()

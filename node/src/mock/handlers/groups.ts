@@ -62,6 +62,22 @@ export function createGroup(ctx: HandlerContext, body: unknown): HandlerResponse
   if (typeof group.displayName !== "string" || group.displayName.length === 0) {
     throw new MockScimError(400, "Missing required attributes: displayName.", "invalidValue");
   }
+  // Entra permits duplicate group displayNames, so strict mode accepts them.
+  // The SCIM Validator treats displayName as the Group joining property and
+  // requires a duplicate POST to 409, so compat mode enforces uniqueness.
+  if (ctx.validatorCompat) {
+    const name = group.displayName.toLowerCase();
+    const clash = ctx.store
+      .listGroups()
+      .some((g) => (g.displayName ?? "").toLowerCase() === name);
+    if (clash) {
+      throw new MockScimError(
+        409,
+        `A group with displayName '${group.displayName}' already exists.`,
+        "uniqueness",
+      );
+    }
+  }
   const created = ctx.store.createGroup(group);
   return {
     status: 201,

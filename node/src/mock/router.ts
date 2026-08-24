@@ -137,8 +137,8 @@ function route(
     return { status: 200, body: resourceType };
   }
   if (head === "schemas" && method === "GET") {
-    if (!id) return { status: 200, body: schemasList() };
-    const schema = schemaById(id);
+    if (!id) return { status: 200, body: schemasList(ctx.validatorCompat) };
+    const schema = schemaById(id, ctx.validatorCompat);
     if (!schema) throw new MockScimError(404, `Schema '${id}' not found.`);
     return { status: 200, body: schema };
   }

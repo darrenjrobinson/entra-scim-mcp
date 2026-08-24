@@ -178,15 +178,43 @@ const ALL_SCHEMAS: ScimSchema[] = [
   CSA_SCHEMA,
 ];
 
-export function schemasList(): Record<string, unknown> {
+/**
+ * The Microsoft SCIM Validator refuses to run at all against a User schema
+ * that advertises `password` — it fails test-data generation with "The
+ * attribute password for User is not supported by the SCIM protocol", even
+ * though RFC 7643 §4.1.1 defines it (writeOnly, returned: never). The real
+ * Entra inbound API both advertises and *requires* password on create, so
+ * strict mode keeps advertising it and only validator-compat hides it.
+ */
+function schemasFor(validatorCompat: boolean): ScimSchema[] {
+  if (!validatorCompat) return ALL_SCHEMAS;
+  return ALL_SCHEMAS.map((schema) =>
+    schema.id === SCHEMA_USER_CORE
+      ? {
+          ...schema,
+          attributes: schema.attributes.filter(
+            (a) => (a as { name?: string }).name !== "password",
+          ),
+        }
+      : schema,
+  );
+}
+
+export function schemasList(validatorCompat = false): Record<string, unknown> {
+  const schemas = schemasFor(validatorCompat);
   return {
     schemas: [SCHEMA_LIST_RESPONSE],
-    totalResults: ALL_SCHEMAS.length,
-    Resources: ALL_SCHEMAS,
+    totalResults: schemas.length,
+    Resources: schemas,
   };
 }
 
-export function schemaById(id: string): ScimSchema | undefined {
+export function schemaById(
+  id: string,
+  validatorCompat = false,
+): ScimSchema | undefined {
   const lower = id.toLowerCase();
-  return ALL_SCHEMAS.find((schema) => schema.id.toLowerCase() === lower);
+  return schemasFor(validatorCompat).find(
+    (schema) => schema.id.toLowerCase() === lower,
+  );
 }

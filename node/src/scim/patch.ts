@@ -309,6 +309,16 @@ function memberAddValues(op: ScimPatchOperation): unknown {
   return op.value;
 }
 
+/**
+ * RFC-level envelope parse with none of the Entra-specific operation guards.
+ * Exported for the mock's validator-compat mode, which must accept standard
+ * SCIM PATCH shapes (e.g. `addresses[primary eq true].locality`) that the real
+ * inbound API rejects.
+ */
+export function parsePatchEnvelopeOnly(body: unknown): ScimPatchOperation[] {
+  return parsePatchEnvelope(body);
+}
+
 function parsePatchEnvelope(body: unknown): ScimPatchOperation[] {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new PatchValidationError("PATCH body must be a JSON object.");

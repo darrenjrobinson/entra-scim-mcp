@@ -84,9 +84,14 @@ export function createUser(ctx: HandlerContext, body: unknown): HandlerResponse 
     throw new MockScimError(400, "Request body must be a JSON object.", "invalidSyntax");
   }
   const user = body as ScimUser;
-  const missing = REQUIRED_CREATE_ATTRS.filter((a) => !a.present(user)).map(
-    (a) => a.label,
-  );
+  // The Entra inbound API's required set is far stricter than RFC 7643, which
+  // marks only userName required. The SCIM Validator generates RFC-standard
+  // users (and cannot send a password at all), so compat mode enforces the RFC
+  // minimum instead — otherwise every generated create would 400.
+  const required = ctx.validatorCompat
+    ? REQUIRED_CREATE_ATTRS.filter((a) => a.label === "userName")
+    : REQUIRED_CREATE_ATTRS;
+  const missing = required.filter((a) => !a.present(user)).map((a) => a.label);
   if (missing.length > 0) {
     throw new MockScimError(
       400,
@@ -111,7 +116,7 @@ export function patchUser(
   if (!user) {
     throw new MockScimError(404, `User '${id}' not found.`);
   }
-  const updated = applyUserPatch(user, body);
+  const updated = applyUserPatch(user, body, ctx.validatorCompat);
   ctx.store.putUser(updated);
   if (ctx.validatorCompat) {
     return { status: 200, body: sanitizeUser(ctx.store.getUser(id)!) };

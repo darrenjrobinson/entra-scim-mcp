@@ -4,6 +4,7 @@ import {
   SCHEMA_ENTRA_USER,
   SCHEMA_LIST_RESPONSE,
   SCHEMA_PATCH_OP,
+  SCHEMA_GROUP_CORE,
   SCHEMA_USER_CORE,
 } from "../../src/scim/types.js";
 
@@ -321,6 +322,134 @@ describe("cursor pagination", () => {
 });
 
 describe("validator-compat mode", () => {
+  // The SCIM Validator aborts test-data generation if the User schema
+  // advertises `password`, and it cannot send one — so compat mode must hide
+  // the attribute and enforce only RFC 7643's required set (userName).
+  it("hides password from the User schema and accepts an RFC-minimal create", async () => {
+    const compat = createMockServer({ token: TOKEN, validatorCompat: true });
+    const { url } = await compat.listen(0);
+    try {
+      const headers = { Authorization: `Bearer ${TOKEN}` };
+
+      const schemas = await fetch(`${url}/Schemas`, { headers });
+      const body = (await schemas.json()) as { Resources: any[] };
+      const userSchema = body.Resources.find(
+        (s) => s.id === "urn:ietf:params:scim:schemas:core:2.0:User",
+      );
+      const names = userSchema.attributes.map((a: any) => a.name);
+      expect(names).not.toContain("password");
+      expect(names).toContain("userName");
+
+      const created = await fetch(`${url}/Users`, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/scim+json" },
+        body: JSON.stringify({
+          schemas: [SCHEMA_USER_CORE],
+          userName: "rfc.minimal@contoso.local",
+        }),
+      });
+      expect(created.status).toBe(201);
+    } finally {
+      await compat.close();
+    }
+  });
+
+  it("still advertises and requires password in strict mode", async () => {
+    const schemas = await call("GET", "/Schemas");
+    const body = (await schemas.json()) as { Resources: any[] };
+    const userSchema = body.Resources.find(
+      (s) => s.id === "urn:ietf:params:scim:schemas:core:2.0:User",
+    );
+    expect(userSchema.attributes.map((a: any) => a.name)).toContain("password");
+
+    const created = await call("POST", "/Users", {
+      schemas: [SCHEMA_USER_CORE],
+      userName: "rfc.minimal.strict@contoso.local",
+    });
+    expect(created.status).toBe(400);
+    expect((await created.json()).detail).toContain("password");
+  });
+
+  // Three divergences the Microsoft SCIM Validator surfaced on 2026-08-24.
+  // All are Entra-specific behaviours that must not apply in RFC-standard mode.
+  it("accepts RFC address path filters, normalises manager, and 409s duplicate groups", async () => {
+    const compat = createMockServer({ token: TOKEN, validatorCompat: true });
+    const { url } = await compat.listen(0);
+    const headers = {
+      Authorization: `Bearer ${TOKEN}`,
+      "Content-Type": "application/scim+json",
+    };
+    try {
+      const created = await fetch(`${url}/Users`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          schemas: [SCHEMA_USER_CORE],
+          userName: "compat.probe@contoso.local",
+          addresses: [{ primary: true, locality: "OLD" }],
+        }),
+      });
+      const { id } = (await created.json()) as { id: string };
+
+      // Entra demands [type eq "work"]; the validator sends [primary eq true].
+      const patched = await fetch(`${url}/Users/${id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          Operations: [
+            { op: "replace", path: 'addresses[primary eq true].locality', value: "NEW" },
+            {
+              op: "replace",
+              path: "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager",
+              value: "mgr-1",
+            },
+          ],
+        }),
+      });
+      expect(patched.status).toBe(200);
+      const body = (await patched.json()) as any;
+      expect(body.addresses[0].locality).toBe("NEW");
+      // A bare manager id must round-trip as complex { value }.
+      expect(
+        body["urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"].manager,
+      ).toEqual({ value: "mgr-1" });
+
+      const group = { schemas: [SCHEMA_GROUP_CORE], displayName: "Duplicate Probe" };
+      const first = await fetch(`${url}/Groups`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(group),
+      });
+      expect(first.status).toBe(201);
+      const second = await fetch(`${url}/Groups`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(group),
+      });
+      expect(second.status).toBe(409);
+    } finally {
+      await compat.close();
+    }
+  });
+
+  it("keeps the Entra address guard and duplicate-group tolerance in strict mode", async () => {
+    const created = await call("POST", "/Users", newUser("strict.addr@contoso.local"));
+    const { id } = (await created.json()) as { id: string };
+
+    const rejected = await call("PATCH", `/Users/${id}`, {
+      schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+      Operations: [
+        { op: "replace", path: 'addresses[primary eq true].locality', value: "NEW" },
+      ],
+    });
+    expect(rejected.status).toBe(400);
+
+    const group = { schemas: [SCHEMA_GROUP_CORE], displayName: "Strict Duplicate OK" };
+    expect((await call("POST", "/Groups", group)).status).toBe(201);
+    expect((await call("POST", "/Groups", group)).status).toBe(201);
+  });
+
   it("returns members, supports startIndex, and 200s on PATCH", async () => {
     const compat = createMockServer({ token: TOKEN, validatorCompat: true });
     const { url } = await compat.listen(0);
