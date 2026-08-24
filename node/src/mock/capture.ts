@@ -8,17 +8,37 @@ import type { CaptureEntry } from "./router.js";
  * interleave.
  */
 export function createJsonlCapture(path: string): (entry: CaptureEntry) => void {
-  let chain: Promise<void> = mkdir(dirname(path), { recursive: true }).then(
+  const dir = dirname(path);
+  let disabled = false;
+
+  // `mkdir` with recursive:true already resolves when the directory exists, so
+  // there is no benign rejection left to ignore here — a failure means no
+  // permission, a file sitting on the path, or a read-only volume, and every
+  // appendFile after it would fail the same way. Swallowing it cost the whole
+  // capture in silence, which for a session you are running precisely to
+  // record is the worst available outcome.
+  let chain: Promise<void> = mkdir(dir, { recursive: true }).then(
     () => undefined,
-    () => undefined,
+    (err: unknown) => {
+      disabled = true;
+      process.stderr.write(
+        `entra-scim-mock: capture disabled — cannot create ${dir}: ${describe(err)}\n`,
+      );
+    },
   );
+
   return (entry) => {
+    if (disabled) return;
     chain = chain
-      .then(() => appendFile(path, `${JSON.stringify(entry)}\n`, "utf8"))
+      .then(() => (disabled ? undefined : appendFile(path, `${JSON.stringify(entry)}\n`, "utf8")))
       .catch((err: unknown) => {
         process.stderr.write(
-          `entra-scim-mock: capture write failed: ${err instanceof Error ? err.message : String(err)}\n`,
+          `entra-scim-mock: capture write failed: ${describe(err)}\n`,
         );
       });
   };
+}
+
+function describe(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

@@ -178,6 +178,26 @@ export class MockStore {
     group.meta = { ...group.meta, lastModified: isoNow() };
   }
 
+  /**
+   * Remove one member.
+   *
+   * Removing a user that exists but is not currently a member is already a
+   * silent no-op — the filter matches nothing — so the operation is idempotent
+   * over every state reachable with a live member id.
+   *
+   * A memberId naming no user at all is a 400, and that is deliberate rather
+   * than an oversight. It mirrors addGroupMembers, which rejects the same id
+   * with the same documented message, and it matches an API that resolves
+   * member references against the directory. The case this covers is
+   * deleteUser followed by remove_group_member: deleteUser has already
+   * stripped the membership, so the id no longer resolves. A mock that
+   * shrugged there would be more lenient than the thing it stands in for, and
+   * mock leniency is exactly what hid two live defects from this suite before.
+   *
+   * Not yet confirmed against a live tenant — the real API may well answer 204
+   * here. Until someone spends the call, strict is the direction that fails
+   * loudly rather than quietly.
+   */
   removeGroupMember(groupId: string, memberId: string): void {
     const group = this.requireGroup(groupId);
     if (!this.users.has(memberId)) {
