@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,6 +27,7 @@ function entry(status: number): CaptureEntry {
 
 /** Occurrences of a plain substring in a file — no regex, no escaping. */
 function countMatches(path: string, needle: string): number {
+  if (!existsSync(path)) return 0;
   return readFileSync(path, "utf8").split(needle).length - 1;
 }
 
@@ -95,6 +96,57 @@ describe("createJsonlCapture", () => {
         .map((c) => String(c[0]))
         .filter((line) => line.includes("capture disabled"));
       expect(disabledLines).toHaveLength(1);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  // A directory sitting where the capture FILE goes makes every appendFile
+  // fail with EISDIR, while mkdir of the parent still succeeds — so the sink
+  // starts up healthy and only the writes fail. Removing it makes them work
+  // again, which is the transient case the sink must survive.
+  it("reports a persistent write failure once, not once per request", async () => {
+    const path = join(dir, "write-blocked.jsonl");
+    await mkdir(path, { recursive: true });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    try {
+      const capture = createJsonlCapture(path);
+      for (let i = 0; i < 8; i++) capture(entry(200));
+      await settleUntil(() => stderr.mock.calls.length > 0);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const failures = stderr.mock.calls
+        .map((c) => String(c[0]))
+        .filter((line) => line.includes("capture write failed"));
+      expect(failures).toHaveLength(1);
+      // And it is not the directory-level message: the sink is still alive.
+      expect(stderr.mock.calls.map((c) => String(c[0])).join("")).not.toContain(
+        "capture disabled",
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it("keeps writing once the failure clears, and says so", async () => {
+    const path = join(dir, "write-recovers.jsonl");
+    await mkdir(path, { recursive: true });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    try {
+      const capture = createJsonlCapture(path);
+      capture(entry(500));
+      await settleUntil(() => stderr.mock.calls.length > 0);
+
+      // Clear the blockage; the sink was never disabled, so it should resume.
+      await rm(path, { recursive: true, force: true });
+      capture(entry(200));
+      await settleUntil(() => countMatches(path, "durationMs") === 1);
+
+      const written = stderr.mock.calls.map((c) => String(c[0])).join("");
+      expect(written).toContain("capture writes recovered");
+      expect(countMatches(path, "durationMs")).toBe(1);
     } finally {
       stderr.mockRestore();
     }
