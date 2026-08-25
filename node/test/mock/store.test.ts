@@ -3,7 +3,11 @@ import { MockStore } from "../../src/mock/store.js";
 import { MockScimError } from "../../src/mock/errors.js";
 import { SCHEMA_USER_CORE, SCHEMA_GROUP_CORE } from "../../src/scim/types.js";
 
-function user(userName: string): { schemas: string[]; userName: string; displayName: string } {
+function user(userName: string): {
+  schemas: string[];
+  userName: string;
+  displayName: string;
+} {
   return { schemas: [SCHEMA_USER_CORE], userName, displayName: userName };
 }
 
@@ -65,9 +69,7 @@ describe("MockStore groups and membership", () => {
     const store = new MockStore();
     const u1 = store.createUser(user("a@x.com"));
     const g = store.createGroup(group("G"));
-    const err = captureError(() =>
-      store.addGroupMembers(g.id, [u1.id, "missing-id"]),
-    );
+    const err = captureError(() => store.addGroupMembers(g.id, [u1.id, "missing-id"]));
     expect((err as MockScimError).status).toBe(400);
     expect((err as MockScimError).message).toContain("does not exist");
     expect(store.getGroup(g.id)?.members).toHaveLength(0);

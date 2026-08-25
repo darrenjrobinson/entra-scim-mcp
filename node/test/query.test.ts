@@ -19,9 +19,9 @@ describe("buildQueryString", () => {
   });
 
   it("URL-encodes special characters in values", () => {
-    expect(
-      buildQueryString({ filter: 'userName eq "x@y.com"' }),
-    ).toBe("?filter=userName%20eq%20%22x%40y.com%22");
+    expect(buildQueryString({ filter: 'userName eq "x@y.com"' })).toBe(
+      "?filter=userName%20eq%20%22x%40y.com%22",
+    );
   });
 
   it("joins multiple params with &", () => {
@@ -38,9 +38,7 @@ describe("buildQueryString", () => {
   });
 
   it("throws if a value has surrounding whitespace", () => {
-    expect(() => buildQueryString({ filter: " userName eq \"x\"" })).toThrow(
-      /whitespace/,
-    );
+    expect(() => buildQueryString({ filter: ' userName eq "x"' })).toThrow(/whitespace/);
   });
 });
 
@@ -63,15 +61,15 @@ describe("assertRawQueryHasNoWhitespaceAroundEquals", () => {
   });
 
   it("rejects percent-encoded whitespace around =", () => {
-    expect(() =>
-      assertRawQueryHasNoWhitespaceAroundEquals("filter%20=x"),
-    ).toThrow(/whitespace/i);
-    expect(() =>
-      assertRawQueryHasNoWhitespaceAroundEquals("filter=%20x"),
-    ).toThrow(/whitespace/i);
-    expect(() =>
-      assertRawQueryHasNoWhitespaceAroundEquals("count=%0910"),
-    ).toThrow(/whitespace/i);
+    expect(() => assertRawQueryHasNoWhitespaceAroundEquals("filter%20=x")).toThrow(
+      /whitespace/i,
+    );
+    expect(() => assertRawQueryHasNoWhitespaceAroundEquals("filter=%20x")).toThrow(
+      /whitespace/i,
+    );
+    expect(() => assertRawQueryHasNoWhitespaceAroundEquals("count=%0910")).toThrow(
+      /whitespace/i,
+    );
   });
 
   it("allows encoded spaces away from =", () => {

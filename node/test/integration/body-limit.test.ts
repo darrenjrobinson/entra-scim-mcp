@@ -155,9 +155,7 @@ describe("request body size limit", () => {
   }, 30_000);
 
   it("still serves normal traffic afterwards", async () => {
-    const res = await post("/users", [
-      userPayload("Small User", "small@example.com"),
-    ]);
+    const res = await post("/users", [userPayload("Small User", "small@example.com")]);
     expect(res.status).toBe(201);
   });
 });

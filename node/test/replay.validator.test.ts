@@ -54,9 +54,7 @@ describe("validator fixture replay", () => {
           const path = substitute(step.request.path, aliases);
           const body =
             step.request.body !== undefined
-              ? JSON.parse(
-                  substitute(JSON.stringify(step.request.body), aliases),
-                )
+              ? JSON.parse(substitute(JSON.stringify(step.request.body), aliases))
               : undefined;
 
           const res = await fetch(`${url}${path}`, {
@@ -67,9 +65,7 @@ describe("validator fixture replay", () => {
               ...(step.request.method.toUpperCase() === "DELETE"
                 ? {}
                 : { Accept: "application/json" }),
-              ...(body !== undefined
-                ? { "Content-Type": "application/scim+json" }
-                : {}),
+              ...(body !== undefined ? { "Content-Type": "application/scim+json" } : {}),
             },
             body: body !== undefined ? JSON.stringify(body) : undefined,
           });
@@ -143,10 +139,6 @@ function expectSubset(actual: unknown, expected: unknown, path: string): void {
     `${path}: expected an object, got ${JSON.stringify(actual)?.slice(0, 120)}`,
   ).toBe(true);
   for (const [key, value] of Object.entries(expected)) {
-    expectSubset(
-      (actual as Record<string, unknown>)[key],
-      value,
-      `${path}.${key}`,
-    );
+    expectSubset((actual as Record<string, unknown>)[key], value, `${path}.${key}`);
   }
 }

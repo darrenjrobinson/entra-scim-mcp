@@ -14,10 +14,7 @@ import {
   type PageParams,
 } from "./shared.js";
 
-export function listGroups(
-  ctx: HandlerContext,
-  query: URLSearchParams,
-): HandlerResponse {
+export function listGroups(ctx: HandlerContext, query: URLSearchParams): HandlerResponse {
   let groups = ctx.store.listGroups();
   const rawFilter = query.get("filter");
   // `get` returns "" for a present-but-empty `?filter=` and null when the
@@ -64,7 +61,11 @@ export function createGroup(ctx: HandlerContext, body: unknown): HandlerResponse
   }
   const group = body as ScimGroup;
   if (typeof group.displayName !== "string" || group.displayName.length === 0) {
-    throw new MockScimError(400, "Missing required attributes: displayName.", "invalidValue");
+    throw new MockScimError(
+      400,
+      "Missing required attributes: displayName.",
+      "invalidValue",
+    );
   }
   // Entra permits duplicate group displayNames, so strict mode accepts them.
   // The SCIM Validator treats displayName as the Group joining property and

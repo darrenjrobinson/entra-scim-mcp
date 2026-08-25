@@ -30,11 +30,11 @@ export function createJsonlCapture(path: string): (entry: CaptureEntry) => void 
   return (entry) => {
     if (disabled) return;
     chain = chain
-      .then(() => (disabled ? undefined : appendFile(path, `${JSON.stringify(entry)}\n`, "utf8")))
+      .then(() =>
+        disabled ? undefined : appendFile(path, `${JSON.stringify(entry)}\n`, "utf8"),
+      )
       .catch((err: unknown) => {
-        process.stderr.write(
-          `entra-scim-mock: capture write failed: ${describe(err)}\n`,
-        );
+        process.stderr.write(`entra-scim-mock: capture write failed: ${describe(err)}\n`);
       });
   };
 }

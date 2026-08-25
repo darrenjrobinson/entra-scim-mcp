@@ -158,7 +158,10 @@ describe("user lifecycle over HTTP", () => {
       Operations: [{ op: "replace", path: "displayName", value: "Patched" }],
     });
     expect(patchRes.status).toBe(204);
-    const after = (await (await call("GET", `/users/${id}`)).json()) as Record<string, any>;
+    const after = (await (await call("GET", `/users/${id}`)).json()) as Record<
+      string,
+      any
+    >;
     expect(after.displayName).toBe("Patched");
 
     const delRes = await call("DELETE", `/users/${id}`);
@@ -175,7 +178,10 @@ describe("user lifecycle over HTTP", () => {
   });
 
   it("400s when required attributes are missing", async () => {
-    const res = await call("POST", "/users", { schemas: [SCHEMA_USER_CORE], userName: "x@y" });
+    const res = await call("POST", "/users", {
+      schemas: [SCHEMA_USER_CORE],
+      userName: "x@y",
+    });
     expect(res.status).toBe(400);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.detail).toContain("password");
@@ -187,7 +193,9 @@ describe("user lifecycle over HTTP", () => {
       `/users?filter=${encodeURIComponent('userName eq "a" or userName eq "b"')}`,
     );
     expect(orRes.status).toBe(400);
-    expect(((await orRes.json()) as Record<string, unknown>).scimType).toBe("invalidFilter");
+    expect(((await orRes.json()) as Record<string, unknown>).scimType).toBe(
+      "invalidFilter",
+    );
 
     const badAttr = await call(
       "GET",
@@ -228,12 +236,18 @@ describe("group lifecycle over HTTP", () => {
     });
     expect(addRes.status).toBe(204);
 
-    const got = (await (await call("GET", `/groups/${gid}`)).json()) as Record<string, any>;
+    const got = (await (await call("GET", `/groups/${gid}`)).json()) as Record<
+      string,
+      any
+    >;
     expect(got.members).toBeUndefined();
 
     // membership is discoverable through the members.value filter
     const byMember = (await (
-      await call("GET", `/groups?filter=${encodeURIComponent(`members.value eq "${u1}"`)}`)
+      await call(
+        "GET",
+        `/groups?filter=${encodeURIComponent(`members.value eq "${u1}"`)}`,
+      )
     ).json()) as Record<string, any>;
     expect(byMember.resources).toHaveLength(1);
     expect(byMember.resources[0].id).toBe(gid);
@@ -398,7 +412,7 @@ describe("validator-compat mode", () => {
         body: JSON.stringify({
           schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
           Operations: [
-            { op: "replace", path: 'addresses[primary eq true].locality', value: "NEW" },
+            { op: "replace", path: "addresses[primary eq true].locality", value: "NEW" },
             {
               op: "replace",
               path: "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager",
@@ -440,7 +454,7 @@ describe("validator-compat mode", () => {
     const rejected = await call("PATCH", `/Users/${id}`, {
       schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
       Operations: [
-        { op: "replace", path: 'addresses[primary eq true].locality', value: "NEW" },
+        { op: "replace", path: "addresses[primary eq true].locality", value: "NEW" },
       ],
     });
     expect(rejected.status).toBe(400);

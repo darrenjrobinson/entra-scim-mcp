@@ -32,9 +32,7 @@ describe("loadAuthFromEnv (secret / certificate)", () => {
   });
 
   it("requires tenant and client ids", () => {
-    expect(() =>
-      loadAuthFromEnv({ ENTRA_CLIENT_SECRET: "x" }),
-    ).toThrow(ConfigError);
+    expect(() => loadAuthFromEnv({ ENTRA_CLIENT_SECRET: "x" })).toThrow(ConfigError);
   });
 });
 
@@ -75,22 +73,16 @@ describe("loadAuthFromEnv (static token)", () => {
   });
 
   it("warns on non-loopback hosts but proceeds", () => {
-    const write = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const auth = loadAuthFromEnv(staticEnv, {
       baseUrl: "https://my-tunnel.example.dev",
     });
     expect(auth.mode).toBe("static");
-    expect(write).toHaveBeenCalledWith(
-      expect.stringContaining("non-loopback"),
-    );
+    expect(write).toHaveBeenCalledWith(expect.stringContaining("non-loopback"));
   });
 
   it("does not warn for loopback hosts", () => {
-    const write = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     loadAuthFromEnv(staticEnv, { baseUrl: "http://localhost:8990" });
     expect(write).not.toHaveBeenCalled();
   });

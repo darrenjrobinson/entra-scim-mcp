@@ -23,10 +23,7 @@ export interface HandlerResponse {
   headers?: Record<string, string>;
 }
 
-export function listUsers(
-  ctx: HandlerContext,
-  query: URLSearchParams,
-): HandlerResponse {
+export function listUsers(ctx: HandlerContext, query: URLSearchParams): HandlerResponse {
   let users = ctx.store.listUsers();
   const rawFilter = query.get("filter");
   // `get` returns "" for a present-but-empty `?filter=` and null when the

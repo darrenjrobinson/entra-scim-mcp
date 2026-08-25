@@ -16,31 +16,23 @@ describe("parseFilter", () => {
   });
 
   it("parses URN-qualified mailNickname", () => {
-    const clauses = parseFilter(
-      `${SCHEMA_ENTRA_USER}:mailNickname eq "nick"`,
-      "user",
-    );
+    const clauses = parseFilter(`${SCHEMA_ENTRA_USER}:mailNickname eq "nick"`, "user");
     expect(clauses[0]!.attr).toBe(`${SCHEMA_ENTRA_USER}:mailNickname`);
   });
 
   it("parses and-combined clauses", () => {
-    const clauses = parseFilter(
-      'groups.value eq "g-1" and id eq "u-1"',
-      "user",
-    );
+    const clauses = parseFilter('groups.value eq "g-1" and id eq "u-1"', "user");
     expect(clauses).toHaveLength(2);
   });
 
   it("rejects or", () => {
-    expect(() =>
-      parseFilter('userName eq "a" or userName eq "b"', "user"),
-    ).toThrow(FilterValidationError);
+    expect(() => parseFilter('userName eq "a" or userName eq "b"', "user")).toThrow(
+      FilterValidationError,
+    );
   });
 
   it("rejects unsupported operators", () => {
-    expect(() => parseFilter('userName co "a"', "user")).toThrow(
-      FilterValidationError,
-    );
+    expect(() => parseFilter('userName co "a"', "user")).toThrow(FilterValidationError);
   });
 
   it("rejects attributes outside the allow-list", () => {
@@ -50,9 +42,9 @@ describe("parseFilter", () => {
   });
 
   it("rejects externalId combined with other clauses", () => {
-    expect(() =>
-      parseFilter('externalId eq "e-1" and userName eq "a"', "user"),
-    ).toThrow(FilterValidationError);
+    expect(() => parseFilter('externalId eq "e-1" and userName eq "a"', "user")).toThrow(
+      FilterValidationError,
+    );
   });
 
   it("handles escaped quotes in values", () => {
@@ -61,9 +53,7 @@ describe("parseFilter", () => {
   });
 
   it("rejects garbage", () => {
-    expect(() => parseFilter("this is not scim", "user")).toThrow(
-      FilterValidationError,
-    );
+    expect(() => parseFilter("this is not scim", "user")).toThrow(FilterValidationError);
   });
 });
 
@@ -100,10 +90,7 @@ describe("userMatches / groupMatches", () => {
   });
 
   it("matches the Entra mailNickname extension attribute", () => {
-    const clauses = parseFilter(
-      `${SCHEMA_ENTRA_USER}:mailNickname eq "ADELEV"`,
-      "user",
-    );
+    const clauses = parseFilter(`${SCHEMA_ENTRA_USER}:mailNickname eq "ADELEV"`, "user");
     expect(userMatches(u1, clauses, ctx)).toBe(true);
   });
 
@@ -114,15 +101,15 @@ describe("userMatches / groupMatches", () => {
   });
 
   it("matches groups by displayName and members.value", () => {
-    expect(
-      groupMatches(g1, parseFilter('displayName eq "engineering"', "group")),
-    ).toBe(true);
-    expect(
-      groupMatches(g1, parseFilter(`members.value eq "${u1.id}"`, "group")),
-    ).toBe(true);
-    expect(
-      groupMatches(g1, parseFilter(`members.value eq "${u2.id}"`, "group")),
-    ).toBe(false);
+    expect(groupMatches(g1, parseFilter('displayName eq "engineering"', "group"))).toBe(
+      true,
+    );
+    expect(groupMatches(g1, parseFilter(`members.value eq "${u1.id}"`, "group"))).toBe(
+      true,
+    );
+    expect(groupMatches(g1, parseFilter(`members.value eq "${u2.id}"`, "group"))).toBe(
+      false,
+    );
   });
 });
 
@@ -175,15 +162,15 @@ describe("parsePermissiveFilter", () => {
   // Regression: the joiner was an optional group on the clause pattern, so two
   // clauses side by side with nothing between them were read as an `and`.
   it("rejects clauses with no joiner between them", () => {
-    expect(() =>
-      parsePermissiveFilter('userName eq "a" displayName eq "Ada"'),
-    ).toThrow(/Expected 'and' between filter clauses/);
+    expect(() => parsePermissiveFilter('userName eq "a" displayName eq "Ada"')).toThrow(
+      /Expected 'and' between filter clauses/,
+    );
   });
 
   it.each([["or"], ["not"]])("rejects '%s' by name", (op) => {
-    expect(() =>
-      parsePermissiveFilter(`userName eq "a" ${op} userName eq "b"`),
-    ).toThrow(new RegExp(`Only the 'and' logical operator is supported.*got '${op}'`));
+    expect(() => parsePermissiveFilter(`userName eq "a" ${op} userName eq "b"`)).toThrow(
+      new RegExp(`Only the 'and' logical operator is supported.*got '${op}'`),
+    );
   });
 
   it.each([

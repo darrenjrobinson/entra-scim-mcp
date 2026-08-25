@@ -42,9 +42,9 @@ describe("buildUserFilter", () => {
   });
 
   it("rejects unsupported attr for eq", () => {
-    expect(() =>
-      buildUserFilter({ attr: "displayName", op: "eq", value: "x" }),
-    ).toThrow(FilterValidationError);
+    expect(() => buildUserFilter({ attr: "displayName", op: "eq", value: "x" })).toThrow(
+      FilterValidationError,
+    );
   });
 
   it("rejects ew on id (not in allow-list)", () => {
@@ -80,8 +80,7 @@ describe("buildUserFilter", () => {
   it("rejects Custom Security Attributes in filter", () => {
     expect(() =>
       buildUserFilter({
-        attr:
-          "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:CustomSecurityAttributes:Project.ProjectName",
+        attr: "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:CustomSecurityAttributes:Project.ProjectName",
         op: "eq",
         value: "x",
       }),
@@ -103,14 +102,14 @@ describe("buildGroupFilter", () => {
     expect(buildGroupFilter({ attr: "displayName", op: "ew", value: "Team" })).toBe(
       'displayName ew "Team"',
     );
-    expect(() =>
-      buildGroupFilter({ attr: "id", op: "ew", value: "x" }),
-    ).toThrow(FilterValidationError);
+    expect(() => buildGroupFilter({ attr: "id", op: "ew", value: "x" })).toThrow(
+      FilterValidationError,
+    );
   });
 
   it("rejects userName on group filter", () => {
-    expect(() =>
-      buildGroupFilter({ attr: "userName", op: "eq", value: "x" }),
-    ).toThrow(FilterValidationError);
+    expect(() => buildGroupFilter({ attr: "userName", op: "eq", value: "x" })).toThrow(
+      FilterValidationError,
+    );
   });
 });

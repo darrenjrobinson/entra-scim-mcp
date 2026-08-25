@@ -15,7 +15,10 @@ function untouchableCredential(): TokenCredential {
   };
 }
 
-async function dryRunClient(): Promise<{ mcp: Client; fetcher: ReturnType<typeof vi.fn> }> {
+async function dryRunClient(): Promise<{
+  mcp: Client;
+  fetcher: ReturnType<typeof vi.fn>;
+}> {
   const fetcher = vi.fn<typeof fetch>();
   const credential = untouchableCredential();
   const scimClient = new ScimClient({
@@ -29,10 +32,7 @@ async function dryRunClient(): Promise<{ mcp: Client; fetcher: ReturnType<typeof
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const mcp = new Client({ name: "test", version: "0.0.0" });
-  await Promise.all([
-    server.connect(serverTransport),
-    mcp.connect(clientTransport),
-  ]);
+  await Promise.all([server.connect(serverTransport), mcp.connect(clientTransport)]);
   return { mcp, fetcher };
 }
 

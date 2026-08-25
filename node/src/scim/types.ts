@@ -11,8 +11,7 @@ export const SCHEMA_ENTRA_GROUP =
 export const SCHEMA_ENTRA_CSA =
   "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:CustomSecurityAttributes";
 export const SCHEMA_PATCH_OP = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
-export const SCHEMA_LIST_RESPONSE =
-  "urn:ietf:params:scim:api:messages:2.0:ListResponse";
+export const SCHEMA_LIST_RESPONSE = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
 
 export interface ScimMeta {
   resourceType?: string;

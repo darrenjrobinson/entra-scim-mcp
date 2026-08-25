@@ -51,9 +51,7 @@ describe("createJsonlCapture", () => {
     capture(entry(404));
     // Two entries written means the whole chain — mkdir then both appends —
     // has drained.
-    await settleUntil(
-      () => existsSync(path) && countMatches(path, "durationMs") === 2,
-    );
+    await settleUntil(() => existsSync(path) && countMatches(path, "durationMs") === 2);
 
     const lines = (await readFile(path, "utf8")).trimEnd().split("\n");
     expect(lines).toHaveLength(2);
@@ -66,9 +64,7 @@ describe("createJsonlCapture", () => {
     // and neither can any appendFile after it.
     const blocker = join(dir, "blocker");
     await writeFile(blocker, "not a directory", "utf8");
-    const stderr = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
     try {
       const capture = createJsonlCapture(join(blocker, "session.jsonl"));
@@ -86,9 +82,7 @@ describe("createJsonlCapture", () => {
   it("says so once, not once per request", async () => {
     const blocker = join(dir, "blocker2");
     await writeFile(blocker, "not a directory", "utf8");
-    const stderr = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
     try {
       const capture = createJsonlCapture(join(blocker, "session.jsonl"));
@@ -109,9 +103,7 @@ describe("createJsonlCapture", () => {
   it("never throws into the request path", async () => {
     const blocker = join(dir, "blocker3");
     await writeFile(blocker, "not a directory", "utf8");
-    const stderr = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
     try {
       const capture = createJsonlCapture(join(blocker, "session.jsonl"));

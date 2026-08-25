@@ -47,7 +47,10 @@ export default tseslint.config(
 
       // Numbers in template literals are idiomatic and safe to stringify; the
       // rule's value is in catching an object or a nullable landing in one.
-      "@typescript-eslint/restrict-template-expressions": ["error", { allowNumber: true }],
+      "@typescript-eslint/restrict-template-expressions": [
+        "error",
+        { allowNumber: true },
+      ],
 
       // `async` with no `await` is a legitimate way to satisfy a
       // Promise-returning interface — TokenCredential.getToken, and every

@@ -12,7 +12,11 @@ function fakeCredential(token = "test-token"): TokenCredential {
   };
 }
 
-function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+function jsonResponse(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/scim+json", ...headers },
@@ -227,7 +231,9 @@ describe("ScimClient", () => {
   });
 
   it("does not retry a 503 on POST", async () => {
-    const fetcher = vi.fn<typeof fetch>(async () => new Response("unavailable", { status: 503 }));
+    const fetcher = vi.fn<typeof fetch>(
+      async () => new Response("unavailable", { status: 503 }),
+    );
     const client = new ScimClient({
       credential: fakeCredential(),
       fetcher: fetcher,
@@ -275,9 +281,7 @@ describe("ScimClient", () => {
     const fetcher = vi.fn<typeof fetch>(
       (_url, init) =>
         new Promise<Response>((_resolve, reject) => {
-          init!.signal!.addEventListener("abort", () =>
-            reject(init!.signal!.reason),
-          );
+          init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason));
         }),
     );
     const client = new ScimClient({

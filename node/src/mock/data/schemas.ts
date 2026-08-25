@@ -18,7 +18,11 @@ interface AttrOptions {
   subAttributes?: unknown[];
 }
 
-function attr(name: string, type: string, opts: AttrOptions = {}): Record<string, unknown> {
+function attr(
+  name: string,
+  type: string,
+  opts: AttrOptions = {},
+): Record<string, unknown> {
   return {
     name,
     type,
@@ -209,12 +213,7 @@ export function schemasList(validatorCompat = false): Record<string, unknown> {
   };
 }
 
-export function schemaById(
-  id: string,
-  validatorCompat = false,
-): ScimSchema | undefined {
+export function schemaById(id: string, validatorCompat = false): ScimSchema | undefined {
   const lower = id.toLowerCase();
-  return schemasFor(validatorCompat).find(
-    (schema) => schema.id.toLowerCase() === lower,
-  );
+  return schemasFor(validatorCompat).find((schema) => schema.id.toLowerCase() === lower);
 }

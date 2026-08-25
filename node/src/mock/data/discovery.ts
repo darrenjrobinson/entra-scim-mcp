@@ -33,7 +33,8 @@ export function serviceProviderConfig(validatorCompat: boolean): ServiceProvider
       {
         type: "oauthbearertoken",
         name: "OAuth Bearer Token",
-        description: "Authentication via OAuth 2.0 bearer token (mock accepts its configured static token).",
+        description:
+          "Authentication via OAuth 2.0 bearer token (mock accepts its configured static token).",
       },
     ],
   };

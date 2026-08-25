@@ -1,9 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type {
-  ScimGroup,
-  ScimGroupMember,
-  ScimUserCreatePayload,
-} from "../scim/types.js";
+import type { ScimGroup, ScimGroupMember, ScimUserCreatePayload } from "../scim/types.js";
 import { MockScimError } from "./errors.js";
 
 /**

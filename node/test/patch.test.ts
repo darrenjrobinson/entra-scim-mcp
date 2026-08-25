@@ -26,9 +26,9 @@ describe("buildUserPatch", () => {
   });
 
   it("rejects remove of mailNickname (plain path)", () => {
-    expect(() =>
-      buildUserPatch([{ op: "remove", path: "mailNickname" }]),
-    ).toThrow(PatchValidationError);
+    expect(() => buildUserPatch([{ op: "remove", path: "mailNickname" }])).toThrow(
+      PatchValidationError,
+    );
   });
 
   it("rejects remove of mailNickname (extension path)", () => {
@@ -36,8 +36,7 @@ describe("buildUserPatch", () => {
       buildUserPatch([
         {
           op: "remove",
-          path:
-            "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:User:mailNickname",
+          path: "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:User:mailNickname",
         },
       ]),
     ).toThrow(PatchValidationError);
@@ -50,7 +49,7 @@ describe("buildUserPatch", () => {
     expect(body.Operations[0]!.op).toBe("replace");
   });
 
-  it("rejects addresses path filter other than [type eq \"work\"]", () => {
+  it('rejects addresses path filter other than [type eq "work"]', () => {
     expect(() =>
       buildUserPatch([
         {
@@ -62,7 +61,7 @@ describe("buildUserPatch", () => {
     ).toThrow(PatchValidationError);
   });
 
-  it("accepts the canonical addresses[type eq \"work\"] filter", () => {
+  it('accepts the canonical addresses[type eq "work"] filter', () => {
     const body = buildUserPatch([
       {
         op: "replace",
@@ -181,9 +180,7 @@ describe("buildAddGroupMemberPatches", () => {
   });
 
   it("rejects chunkSize over the API cap", () => {
-    expect(() => buildAddGroupMemberPatches(["u-1"], 25)).toThrow(
-      PatchValidationError,
-    );
+    expect(() => buildAddGroupMemberPatches(["u-1"], 25)).toThrow(PatchValidationError);
   });
 
   it("never returns a chunk larger than the API cap", () => {
@@ -239,9 +236,7 @@ describe("buildGroupAttributePatch", () => {
       ]),
     ).toThrow(PatchValidationError);
     expect(() =>
-      buildGroupAttributePatch([
-        { op: "add", value: { Members: [{ value: "u-1" }] } },
-      ]),
+      buildGroupAttributePatch([{ op: "add", value: { Members: [{ value: "u-1" }] } }]),
     ).toThrow(PatchValidationError);
   });
 
@@ -251,9 +246,7 @@ describe("buildGroupAttributePatch", () => {
         {
           op: "add",
           value: {
-            "urn:ietf:params:scim:schemas:core:2.0:Group:members": [
-              { value: "u-1" },
-            ],
+            "urn:ietf:params:scim:schemas:core:2.0:Group:members": [{ value: "u-1" }],
           },
         },
       ]),
@@ -302,9 +295,9 @@ describe("buildCsaPatch", () => {
   });
 
   it("rejects operations targeting non-CSA attributes", () => {
-    expect(() =>
-      buildCsaPatch([{ op: "remove", path: "mailNickname" }]),
-    ).toThrow(PatchValidationError);
+    expect(() => buildCsaPatch([{ op: "remove", path: "mailNickname" }])).toThrow(
+      PatchValidationError,
+    );
     expect(() =>
       buildCsaPatch([{ op: "replace", path: "displayName", value: "x" }]),
     ).toThrow(PatchValidationError);
@@ -364,9 +357,7 @@ describe("validateUserPatchBody", () => {
   });
 
   it("rejects an empty Operations array", () => {
-    expect(() => validateUserPatchBody(envelope([]))).toThrow(
-      PatchValidationError,
-    );
+    expect(() => validateUserPatchBody(envelope([]))).toThrow(PatchValidationError);
   });
 
   it("applies the user op rules (mailNickname removal)", () => {
@@ -388,7 +379,11 @@ describe("validateGroupPatchBody", () => {
     const ops = validateGroupPatchBody(
       envelope([
         { op: "replace", path: "displayName", value: "New" },
-        { op: "replace", path: "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:Group:description", value: "d" },
+        {
+          op: "replace",
+          path: "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:Group:description",
+          value: "d",
+        },
       ]),
     );
     expect(ops).toHaveLength(2);

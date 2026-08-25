@@ -44,8 +44,7 @@ async function main(): Promise<void> {
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error(`Invalid --port: ${values.port}`);
   }
-  const token =
-    values.token ?? process.env.ENTRA_SCIM_MOCK_TOKEN ?? DEFAULT_MOCK_TOKEN;
+  const token = values.token ?? process.env.ENTRA_SCIM_MOCK_TOKEN ?? DEFAULT_MOCK_TOKEN;
 
   const seed = values["no-seed"]
     ? undefined

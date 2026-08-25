@@ -122,9 +122,7 @@ export function validateUserOperation(
     throw new PatchValidationError(`Operation ${idx} is not an object.`);
   }
   if (op.op !== "add" && op.op !== "remove" && op.op !== "replace") {
-    throw new PatchValidationError(
-      `Operation ${idx} has invalid op '${String(op.op)}'.`,
-    );
+    throw new PatchValidationError(`Operation ${idx} has invalid op '${String(op.op)}'.`);
   }
   if (op.op === "remove" && pathTargetsMailNickname(op.path)) {
     throw new PatchValidationError(
@@ -159,9 +157,7 @@ function nullsOutMailNickname(op: ScimPatchOperation): boolean {
     if (pathTargetsMailNickname(key) && value === null) return true;
     // Nested extension object: { "urn:...:Entra:2.0:User": { mailNickname: null } }
     if (value && typeof value === "object" && !Array.isArray(value)) {
-      for (const [subKey, subValue] of Object.entries(
-        value as Record<string, unknown>,
-      )) {
+      for (const [subKey, subValue] of Object.entries(value as Record<string, unknown>)) {
         if (subKey.toLowerCase() === "mailnickname" && subValue === null) {
           return true;
         }
@@ -219,9 +215,7 @@ function targetsCsa(op: ScimPatchOperation): boolean {
       keys.every((key) => {
         const lower = key.toLowerCase();
         return (
-          lower === urn ||
-          lower.startsWith(`${urn}:`) ||
-          lower.startsWith(`${urn}.`)
+          lower === urn || lower.startsWith(`${urn}:`) || lower.startsWith(`${urn}.`)
         );
       })
     );
@@ -331,9 +325,7 @@ function parsePatchEnvelope(body: unknown): ScimPatchOperation[] {
       (s) => typeof s === "string" && s.toLowerCase() === SCHEMA_PATCH_OP.toLowerCase(),
     )
   ) {
-    throw new PatchValidationError(
-      `PATCH body schemas must include ${SCHEMA_PATCH_OP}.`,
-    );
+    throw new PatchValidationError(`PATCH body schemas must include ${SCHEMA_PATCH_OP}.`);
   }
   // The documented examples use both "Operations" and "operations".
   const rawOps = record.Operations ?? record.operations;

@@ -6,7 +6,11 @@ import {
 } from "../scim/errors.js";
 import { assertRawQueryHasNoWhitespaceAroundEquals } from "../scim/query.js";
 import { MockScimError, scimErrorBody } from "./errors.js";
-import { resourceTypeById, resourceTypesList, serviceProviderConfig } from "./data/discovery.js";
+import {
+  resourceTypeById,
+  resourceTypesList,
+  serviceProviderConfig,
+} from "./data/discovery.js";
 import { schemaById, schemasList } from "./data/schemas.js";
 import * as users from "./handlers/users.js";
 import * as groups from "./handlers/groups.js";
@@ -107,7 +111,10 @@ async function handle(
           throw new MockScimError(400, `Accept header ${accept} is invalid.`);
         }
       } else if (!/application\/(scim\+)?json|\*\/\*/i.test(accept)) {
-        throw new MockScimError(400, "HTTP Accept header for application/json is missing.");
+        throw new MockScimError(
+          400,
+          "HTTP Accept header for application/json is missing.",
+        );
       }
     }
 
@@ -132,7 +139,8 @@ function route(
 ): HandlerResponse {
   const segments = path.split("/").filter(Boolean);
   const head = segments[0]?.toLowerCase();
-  const id = segments.length > 1 ? decodeURIComponent(segments.slice(1).join("/")) : undefined;
+  const id =
+    segments.length > 1 ? decodeURIComponent(segments.slice(1).join("/")) : undefined;
 
   if (head === "serviceproviderconfig" && method === "GET" && !id) {
     return { status: 200, body: serviceProviderConfig(ctx.validatorCompat) };

@@ -46,8 +46,7 @@ export function createMockServer(options: CreateMockServerOptions = {}): MockSer
         httpServer.once("error", reject);
         httpServer.listen(port, host, () => {
           const address = httpServer.address();
-          const actualPort =
-            typeof address === "object" && address ? address.port : port;
+          const actualPort = typeof address === "object" && address ? address.port : port;
           resolve({ port: actualPort, url: `http://${host}:${actualPort}` });
         });
       });

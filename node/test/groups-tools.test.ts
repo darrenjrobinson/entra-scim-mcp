@@ -84,10 +84,10 @@ describe("add_group_members", () => {
     const manyIds = Array.from({ length: 45 }, (_, i) => `u-${i}`);
     const fetcher = vi.fn<typeof fetch>(
       async () =>
-        new Response(
-          JSON.stringify({ status: "404", detail: "group not found" }),
-          { status: 404, headers: { "content-type": "application/scim+json" } },
-        ),
+        new Response(JSON.stringify({ status: "404", detail: "group not found" }), {
+          status: 404,
+          headers: { "content-type": "application/scim+json" },
+        }),
     );
     const mcp = await connectedClient(fetcher);
 

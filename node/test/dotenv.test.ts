@@ -22,7 +22,10 @@ afterEach(() => {
 describe("loadDotEnv", () => {
   it("parses simple assignments and reports the keys applied", () => {
     const env: Record<string, string | undefined> = {};
-    const applied = loadDotEnv(envFile("ENTRA_TENANT_ID=abc\nENTRA_CLIENT_ID=def\n"), env);
+    const applied = loadDotEnv(
+      envFile("ENTRA_TENANT_ID=abc\nENTRA_CLIENT_ID=def\n"),
+      env,
+    );
     expect(env).toEqual({ ENTRA_TENANT_ID: "abc", ENTRA_CLIENT_ID: "def" });
     expect(applied).toEqual(["ENTRA_TENANT_ID", "ENTRA_CLIENT_ID"]);
   });

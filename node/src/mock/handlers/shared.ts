@@ -40,7 +40,11 @@ export function paginate<T>(
   } else if (validatorCompat && params.startIndex) {
     const idx = Number(params.startIndex);
     if (!Number.isInteger(idx) || idx < 1) {
-      throw new MockScimError(400, "startIndex must be a positive integer.", "invalidValue");
+      throw new MockScimError(
+        400,
+        "startIndex must be a positive integer.",
+        "invalidValue",
+      );
     }
     offset = idx - 1;
     usedIndex = true;
