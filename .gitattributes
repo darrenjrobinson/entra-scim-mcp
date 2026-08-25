@@ -1,0 +1,21 @@
+# Normalise every text file to LF in the repository and in the working tree.
+#
+# Without this, a Windows clone with core.autocrlf=true (the platform default)
+# gets CRLF on checkout, and `npm run format:check` fails on every file —
+# Prettier's endOfLine default is "lf". CI never sees it, because Linux runners
+# check out LF, so the repo looks fine and every Windows contributor's first
+# command fails. `eol=lf` overrides autocrlf rather than relying on the clone's
+# configuration.
+* text=auto eol=lf
+
+# Exempt anything genuinely binary, so git never rewrites bytes inside it.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.woff binary
+*.woff2 binary
