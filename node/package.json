@@ -1,6 +1,6 @@
 {
   "name": "entra-scim-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Model Context Protocol server for Microsoft Entra ID SCIM 2.0 inbound provisioning.",
   "mcpName": "io.github.darrenjrobinson/entra-scim-mcp",
   "type": "module",
