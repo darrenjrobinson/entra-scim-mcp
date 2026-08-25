@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { ScimGroup, ScimGroupMember, ScimUser } from "../scim/types.js";
+import type { ScimGroup, ScimGroupMember, ScimUserCreatePayload } from "../scim/types.js";
 import { MockScimError } from "./errors.js";
 
-export interface StoredUser extends ScimUser {
+/**
+ * Held with the password still on it — the store is the write side. Reads go
+ * out through sanitizeUser in ./handlers/users.js, which strips it.
+ */
+export interface StoredUser extends ScimUserCreatePayload {
   id: string;
 }
 
@@ -13,7 +17,7 @@ export interface StoredGroup extends ScimGroup {
 }
 
 export interface SeedData {
-  users?: ScimUser[];
+  users?: ScimUserCreatePayload[];
   groups?: ScimGroup[];
 }
 
@@ -30,7 +34,7 @@ export class MockStore {
 
   // -- users ----------------------------------------------------------------
 
-  createUser(input: ScimUser): StoredUser {
+  createUser(input: ScimUserCreatePayload): StoredUser {
     const userName = input.userName;
     if (typeof userName !== "string" || userName.length === 0) {
       throw new MockScimError(400, "userName is required.", "invalidValue");
@@ -170,16 +174,43 @@ export class MockStore {
     group.meta = { ...group.meta, lastModified: isoNow() };
   }
 
+  /**
+   * Remove one member.
+   *
+   * Verified against a live tenant on 2026-08-25 (see
+   * scripts/probe-member-removal.ts). The rule is *membership*, not user
+   * existence, and the API is stricter than this mock used to be:
+   *
+   *   real member                        204
+   *   live user who was never a member    404
+   *   GUID that was never a user          404
+   *   member whose user was just deleted  404
+   *
+   * The middle case is the one that matters. This mock used to accept it
+   * silently — the remove filter matched nothing, so nothing happened — which
+   * meant client code could pass here and fail against the real API. It also
+   * answered 400 where the API answers 404.
+   *
+   * Deleting a user strips their memberships first, so the delete-then-remove
+   * ordering lands in the same place as any other non-member: 404, because by
+   * then the filter matches nothing. Confirmed by querying
+   * `list_groups?filter=members.value eq <id>` either side of the delete.
+   *
+   * The message names the *group* rather than the member, which reads oddly
+   * given the group plainly exists. That is what the API returns — a probe
+   * with a bogus group id produced the same sentence naming that id — so the
+   * mock reproduces it rather than improving on it.
+   */
   removeGroupMember(groupId: string, memberId: string): void {
     const group = this.requireGroup(groupId);
-    if (!this.users.has(memberId)) {
+    const before = group.members.length;
+    group.members = group.members.filter((m) => m.value !== memberId);
+    if (group.members.length === before) {
       throw new MockScimError(
-        400,
-        `Resource '${memberId}' does not exist or one of its queried reference-property objects are not present.`,
-        "invalidValue",
+        404,
+        `Resource '${groupId}' does not exist or one of its queried reference-property objects are not present.`,
       );
     }
-    group.members = group.members.filter((m) => m.value !== memberId);
     group.meta = { ...group.meta, lastModified: isoNow() };
   }
 

@@ -181,6 +181,17 @@ Things the live API does that the docs either state ambiguously or not at all. E
 
 **Group `displayName` is not unique.** Entra accepts a duplicate group name and returns 201. RFC-oriented tooling often assumes 409 here, so do not rely on create failing to detect an existing group — filter first.
 
+**Removing a group member is about membership, not the user.** A `remove` on `members[value eq "<id>"]` that matches nothing is a **404**, whoever the id belongs to — a live user who was simply never in the group is refused exactly like a GUID that was never a user. Probed against a real tenant with a ballast member present throughout, so none of it is an artefact of emptying the group:
+
+| Case | Result |
+| --- | --- |
+| A real member | 204 |
+| A live user who was never a member | 404 |
+| A well-formed GUID that was never a user | 404 |
+| A member whose user was deleted first | 404 |
+
+Two consequences worth knowing. Deleting a user strips their memberships, so the delete-then-remove-membership ordering lands in the same place as any other non-member — confirmed by querying `list_groups` with a `members.value` filter either side of the delete. And the error message names the **group**, not the member (`Resource '<groupId>' does not exist or one of its queried reference-property objects are not present`), which reads oddly since the group plainly exists; a probe with a deliberately bogus group id returned the same sentence naming that id, so the text simply echoes the PATCH target. The mock reproduces all of this rather than improving on it. Re-run it with `npx tsx scripts/probe-member-removal.ts --confirm` (~17 billed calls).
+
 **Group reads never include members.** `get_group` returns no `members` array at any page size. To find a user's groups, filter the other way: `list_groups` with `members.value eq "<userId>"`.
 
 **Errors are structured, and worth surfacing verbatim.** Failures carry `status`, `scimType` and `detail`, and the `detail` text is unusually specific (it will name the offending operation index and constraint). The tools pass it through unchanged rather than flattening it to a message.
@@ -271,7 +282,15 @@ The pattern worth taking away: **mock leniency hides real API behaviour.** Every
 
 ### Driving the live tenant conversationally
 
-The repo-root `.mcp.json` registers the server with Claude Code using `scripts/dev-server.mjs`, which loads `node/.env` and starts the built server — so no secret goes into a committed config file. Build first, then restart your client:
+The repo-root `.mcp.json` registers the server with Claude Code using `scripts/dev-server.mjs`, which loads `node/.env` and starts the built server — so no secret goes into a committed config file.
+
+It runs the **built** server, so `node/dist` has to exist before your MCP client can launch it. A fresh clone gets there with:
+
+```bash
+cd node && npm install     # the "prepare" script builds as part of install
+```
+
+After any source change, rebuild and restart your client so it relaunches the command:
 
 ```bash
 cd node && npm run build
@@ -281,14 +300,69 @@ cd node && npm run build
 
 ```bash
 cd node
-npm install
+npm install             # installs, then builds via "prepare"
 npm test
-npm run build
+npm run lint            # ESLint, type-aware
+npm run format:check    # Prettier
+npm run typecheck       # strict tsc over src, test and scripts
+npm run test:coverage   # vitest with the coverage gate
+npm run build           # rebuild after a source change
 npm run mock            # run the local mock server (tsx, no build needed)
 npm run mock:capture    # mock in validator-compat mode, capturing traffic to captures/
 ```
 
+`npm run lint`, `format:check`, `typecheck` and `test` are the four gates CI
+runs on every push and pull request, alongside `npm audit --audit-level=high`.
+
 The server has no test dependency on a real tenant. Unit tests cover the filter, patch, query, and client layers; integration tests boot the in-process mock server and drive **every MCP tool end-to-end** over real HTTP (`node/test/integration/`). Captured [SCIM Validator](node/docs/scim-validator.md) sessions convert into replay fixtures with `npm run fixtures:convert`. For the one thing none of that can prove — that the live API accepts these payloads — see [Testing against a real tenant](#testing-against-a-real-tenant).
+
+## Releasing
+
+The version lives in four places — `node/package.json`, `node/package-lock.json`
+(twice), and `server.json` (twice, once for the registry record and once for the
+npm package it points at). One command writes all of them:
+
+```bash
+cd node
+npm version minor          # or patch / major
+git push --follow-tags
+```
+
+`npm version` bumps package.json and the lockfile, then the `version` lifecycle
+script propagates it to `server.json` and stages the result, so the commit and
+tag it creates are already consistent. `npm run check:version` verifies that,
+and CI runs it on every push; the release workflow runs it again against the tag
+itself. The version the server reports in its MCP handshake is read from
+package.json at runtime, so it follows automatically.
+
+Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml):
+
+1. **verify** — lint, format, typecheck, tests with coverage, the version/tag
+   check, and `mcp-publisher validate` against the live registry. Nothing is
+   published until all of it passes.
+2. **publish** — `npm publish --access public --provenance`, then waits for the
+   new version to become visible on npm, then publishes `server.json` to the
+   [MCP Registry](https://registry.modelcontextprotocol.io).
+
+Required repository setup:
+
+| What | Where | Needed for |
+| --- | --- | --- |
+| `NPM_TOKEN` secret | Settings → Secrets → Actions | Publishing to npm. An automation token with publish rights. |
+| Nothing | — | The MCP Registry. It authenticates by GitHub OIDC, which is why the workflow requests `id-token: write`. |
+
+The MCP Registry proves you own the npm package by fetching `package.json` and
+comparing its `mcpName` to the `name` in `server.json` — both are
+`io.github.darrenjrobinson/entra-scim-mcp`, and `check:version` asserts they
+still match.
+
+The first npm publish has to be done by hand, because the token has to exist
+before a workflow can use it:
+
+```bash
+cd node
+npm publish --access public
+```
 
 ## License
 

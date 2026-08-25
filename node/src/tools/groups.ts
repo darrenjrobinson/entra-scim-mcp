@@ -46,26 +46,28 @@ export function registerGroupTools(server: McpServer, client: ScimClient): void 
         cursor: z.string().optional(),
       },
     },
-    wrapTool(async (args: {
-      filter?: { attr: string; op: "eq" | "ew"; value: string }[];
-      attributes?: string[];
-      excludedAttributes?: string[];
-      count?: number;
-      cursor?: string;
-    }) => {
-      const result = await client.request<ScimListResponse<ScimGroup>>({
-        method: "GET",
-        path: "/groups",
-        query: {
-          filter: buildGroupFilter(args.filter),
-          attributes: joinAttributes(args.attributes),
-          excludedAttributes: joinAttributes(args.excludedAttributes),
-          count: args.count,
-          cursor: args.cursor,
-        },
-      });
-      return normalizeListResponse(result);
-    }),
+    wrapTool(
+      async (args: {
+        filter?: { attr: string; op: "eq" | "ew"; value: string }[];
+        attributes?: string[];
+        excludedAttributes?: string[];
+        count?: number;
+        cursor?: string;
+      }) => {
+        const result = await client.request<ScimListResponse<ScimGroup>>({
+          method: "GET",
+          path: "/groups",
+          query: {
+            filter: buildGroupFilter(args.filter),
+            attributes: joinAttributes(args.attributes),
+            excludedAttributes: joinAttributes(args.excludedAttributes),
+            count: args.count,
+            cursor: args.cursor,
+          },
+        });
+        return normalizeListResponse(result);
+      },
+    ),
   );
 
   server.registerTool(
@@ -80,20 +82,22 @@ export function registerGroupTools(server: McpServer, client: ScimClient): void 
         excludedAttributes: z.array(z.string()).optional(),
       },
     },
-    wrapTool(async (args: {
-      id: string;
-      attributes?: string[];
-      excludedAttributes?: string[];
-    }) => {
-      return client.request<ScimGroup>({
-        method: "GET",
-        path: `/groups/${encodeURIComponent(args.id)}`,
-        query: {
-          attributes: joinAttributes(args.attributes),
-          excludedAttributes: joinAttributes(args.excludedAttributes),
-        },
-      });
-    }),
+    wrapTool(
+      async (args: {
+        id: string;
+        attributes?: string[];
+        excludedAttributes?: string[];
+      }) => {
+        return client.request<ScimGroup>({
+          method: "GET",
+          path: `/groups/${encodeURIComponent(args.id)}`,
+          query: {
+            attributes: joinAttributes(args.attributes),
+            excludedAttributes: joinAttributes(args.excludedAttributes),
+          },
+        });
+      },
+    ),
   );
 
   server.registerTool(
@@ -111,33 +115,36 @@ export function registerGroupTools(server: McpServer, client: ScimClient): void 
         externalId: z.string().optional(),
       },
     },
-    wrapTool(async (args: {
-      displayName: string;
-      description?: string;
-      mailNickname?: string;
-      mailEnabled?: boolean;
-      securityEnabled?: boolean;
-      externalId?: string;
-    }) => {
-      const ext: Record<string, unknown> = {};
-      if (args.description !== undefined) ext.description = args.description;
-      if (args.mailNickname !== undefined) ext.mailNickname = args.mailNickname;
-      if (args.mailEnabled !== undefined) ext.mailEnabled = args.mailEnabled;
-      if (args.securityEnabled !== undefined) ext.securityEnabled = args.securityEnabled;
+    wrapTool(
+      async (args: {
+        displayName: string;
+        description?: string;
+        mailNickname?: string;
+        mailEnabled?: boolean;
+        securityEnabled?: boolean;
+        externalId?: string;
+      }) => {
+        const ext: Record<string, unknown> = {};
+        if (args.description !== undefined) ext.description = args.description;
+        if (args.mailNickname !== undefined) ext.mailNickname = args.mailNickname;
+        if (args.mailEnabled !== undefined) ext.mailEnabled = args.mailEnabled;
+        if (args.securityEnabled !== undefined)
+          ext.securityEnabled = args.securityEnabled;
 
-      const body: ScimGroup = {
-        schemas: [SCHEMA_GROUP_CORE, SCHEMA_ENTRA_GROUP],
-        displayName: args.displayName,
-        ...(args.externalId ? { externalId: args.externalId } : {}),
-        ...(Object.keys(ext).length > 0 ? { [SCHEMA_ENTRA_GROUP]: ext } : {}),
-      };
+        const body: ScimGroup = {
+          schemas: [SCHEMA_GROUP_CORE, SCHEMA_ENTRA_GROUP],
+          displayName: args.displayName,
+          ...(args.externalId ? { externalId: args.externalId } : {}),
+          ...(Object.keys(ext).length > 0 ? { [SCHEMA_ENTRA_GROUP]: ext } : {}),
+        };
 
-      return client.request<ScimGroup>({
-        method: "POST",
-        path: "/groups",
-        body,
-      });
-    }),
+        return client.request<ScimGroup>({
+          method: "POST",
+          path: "/groups",
+          body,
+        });
+      },
+    ),
   );
 
   server.registerTool(

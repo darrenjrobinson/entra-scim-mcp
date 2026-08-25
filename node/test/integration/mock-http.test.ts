@@ -158,7 +158,10 @@ describe("user lifecycle over HTTP", () => {
       Operations: [{ op: "replace", path: "displayName", value: "Patched" }],
     });
     expect(patchRes.status).toBe(204);
-    const after = (await (await call("GET", `/users/${id}`)).json()) as Record<string, any>;
+    const after = (await (await call("GET", `/users/${id}`)).json()) as Record<
+      string,
+      any
+    >;
     expect(after.displayName).toBe("Patched");
 
     const delRes = await call("DELETE", `/users/${id}`);
@@ -175,7 +178,10 @@ describe("user lifecycle over HTTP", () => {
   });
 
   it("400s when required attributes are missing", async () => {
-    const res = await call("POST", "/users", { schemas: [SCHEMA_USER_CORE], userName: "x@y" });
+    const res = await call("POST", "/users", {
+      schemas: [SCHEMA_USER_CORE],
+      userName: "x@y",
+    });
     expect(res.status).toBe(400);
     const body = (await res.json()) as Record<string, unknown>;
     expect(body.detail).toContain("password");
@@ -187,7 +193,9 @@ describe("user lifecycle over HTTP", () => {
       `/users?filter=${encodeURIComponent('userName eq "a" or userName eq "b"')}`,
     );
     expect(orRes.status).toBe(400);
-    expect(((await orRes.json()) as Record<string, unknown>).scimType).toBe("invalidFilter");
+    expect(((await orRes.json()) as Record<string, unknown>).scimType).toBe(
+      "invalidFilter",
+    );
 
     const badAttr = await call(
       "GET",
@@ -228,12 +236,18 @@ describe("group lifecycle over HTTP", () => {
     });
     expect(addRes.status).toBe(204);
 
-    const got = (await (await call("GET", `/groups/${gid}`)).json()) as Record<string, any>;
+    const got = (await (await call("GET", `/groups/${gid}`)).json()) as Record<
+      string,
+      any
+    >;
     expect(got.members).toBeUndefined();
 
     // membership is discoverable through the members.value filter
     const byMember = (await (
-      await call("GET", `/groups?filter=${encodeURIComponent(`members.value eq "${u1}"`)}`)
+      await call(
+        "GET",
+        `/groups?filter=${encodeURIComponent(`members.value eq "${u1}"`)}`,
+      )
     ).json()) as Record<string, any>;
     expect(byMember.resources).toHaveLength(1);
     expect(byMember.resources[0].id).toBe(gid);
@@ -367,7 +381,7 @@ describe("validator-compat mode", () => {
       userName: "rfc.minimal.strict@contoso.local",
     });
     expect(created.status).toBe(400);
-    expect((await created.json()).detail).toContain("password");
+    expect(((await created.json()) as { detail: string }).detail).toContain("password");
   });
 
   // Three divergences the Microsoft SCIM Validator surfaced on 2026-08-24.
@@ -398,7 +412,7 @@ describe("validator-compat mode", () => {
         body: JSON.stringify({
           schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
           Operations: [
-            { op: "replace", path: 'addresses[primary eq true].locality', value: "NEW" },
+            { op: "replace", path: "addresses[primary eq true].locality", value: "NEW" },
             {
               op: "replace",
               path: "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager",
@@ -440,7 +454,7 @@ describe("validator-compat mode", () => {
     const rejected = await call("PATCH", `/Users/${id}`, {
       schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
       Operations: [
-        { op: "replace", path: 'addresses[primary eq true].locality', value: "NEW" },
+        { op: "replace", path: "addresses[primary eq true].locality", value: "NEW" },
       ],
     });
     expect(rejected.status).toBe(400);
@@ -525,6 +539,51 @@ describe("validator-compat mode", () => {
       );
       expect(res.status).toBe(200);
       expect(((await res.json()) as Record<string, any>).resources).toHaveLength(1);
+    } finally {
+      await compat.close();
+    }
+  });
+});
+
+describe("compat-mode filter grammar", () => {
+  it("400s an empty filter instead of listing the whole tenant", async () => {
+    // parsePermissiveFilter returned zero clauses for `?filter=`, and zero
+    // clauses match every resource — so the request that should have failed
+    // instead dumped the tenant.
+    const compat = createMockServer({ token: TOKEN, validatorCompat: true });
+    const { url } = await compat.listen(0);
+    try {
+      const headers = { Authorization: `Bearer ${TOKEN}` };
+      for (const seeded of ["one@x.com", "two@x.com"]) {
+        await fetch(`${url}/Users`, {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/scim+json" },
+          body: JSON.stringify({
+            schemas: [SCHEMA_USER_CORE],
+            userName: seeded,
+          }),
+        });
+      }
+
+      const res = await fetch(`${url}/Users?filter=`, { headers });
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { scimType?: string; detail?: string };
+      expect(body.scimType).toBe("invalidFilter");
+      expect(body.detail).toMatch(/Filter is empty/);
+    } finally {
+      await compat.close();
+    }
+  });
+
+  it("400s two clauses with no joiner between them", async () => {
+    const compat = createMockServer({ token: TOKEN, validatorCompat: true });
+    const { url } = await compat.listen(0);
+    try {
+      const headers = { Authorization: `Bearer ${TOKEN}` };
+      const filter = encodeURIComponent('userName eq "a@x.com" displayName eq "A"');
+      const res = await fetch(`${url}/Users?filter=${filter}`, { headers });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { detail: string }).detail).toMatch(/Expected 'and'/);
     } finally {
       await compat.close();
     }

@@ -67,6 +67,19 @@ export class FilterValidationError extends Error {
   }
 }
 
+/**
+ * A query string the Entra SCIM API would reject before any handler sees it —
+ * today, whitespace around "=". Distinct from FilterValidationError because
+ * the offending parameter need not be a filter: `count`, `cursor` and
+ * `attributes` reach the same rule.
+ */
+export class QueryValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "QueryValidationError";
+  }
+}
+
 export class PatchValidationError extends Error {
   constructor(message: string) {
     super(message);

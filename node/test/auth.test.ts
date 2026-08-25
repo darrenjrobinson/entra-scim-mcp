@@ -15,7 +15,7 @@ describe("loadAuthFromEnv (secret / certificate)", () => {
       ENTRA_TENANT_ID: TENANT,
       ENTRA_CLIENT_ID: CLIENT,
       ENTRA_CLIENT_SECRET: "s3cret",
-    } as NodeJS.ProcessEnv);
+    });
     expect(auth.mode).toBe("secret");
     expect(auth.tenantId).toBe(TENANT);
   });
@@ -27,14 +27,12 @@ describe("loadAuthFromEnv (secret / certificate)", () => {
         ENTRA_CLIENT_ID: CLIENT,
         ENTRA_CLIENT_SECRET: "s3cret",
         ENTRA_CLIENT_CERT_PATH: "/tmp/cert.pem",
-      } as NodeJS.ProcessEnv),
+      }),
     ).toThrow(ConfigError);
   });
 
   it("requires tenant and client ids", () => {
-    expect(() =>
-      loadAuthFromEnv({ ENTRA_CLIENT_SECRET: "x" } as NodeJS.ProcessEnv),
-    ).toThrow(ConfigError);
+    expect(() => loadAuthFromEnv({ ENTRA_CLIENT_SECRET: "x" })).toThrow(ConfigError);
   });
 });
 
@@ -68,29 +66,23 @@ describe("loadAuthFromEnv (static token)", () => {
         {
           ...staticEnv,
           ENTRA_CLIENT_SECRET: "s3cret",
-        } as NodeJS.ProcessEnv,
+        },
         { baseUrl: "http://127.0.0.1:8990" },
       ),
     ).toThrow(ConfigError);
   });
 
   it("warns on non-loopback hosts but proceeds", () => {
-    const write = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const auth = loadAuthFromEnv(staticEnv, {
       baseUrl: "https://my-tunnel.example.dev",
     });
     expect(auth.mode).toBe("static");
-    expect(write).toHaveBeenCalledWith(
-      expect.stringContaining("non-loopback"),
-    );
+    expect(write).toHaveBeenCalledWith(expect.stringContaining("non-loopback"));
   });
 
   it("does not warn for loopback hosts", () => {
-    const write = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation(() => true);
+    const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     loadAuthFromEnv(staticEnv, { baseUrl: "http://localhost:8990" });
     expect(write).not.toHaveBeenCalled();
   });

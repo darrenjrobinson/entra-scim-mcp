@@ -5,3 +5,7 @@ vitest.config.ts
 .env*
 *.tsbuildinfo
 coverage/
+eslint.config.js
+tsconfig.test.json
+.prettierrc.json
+.prettierignore

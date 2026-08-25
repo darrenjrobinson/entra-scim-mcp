@@ -44,8 +44,7 @@ async function main(): Promise<void> {
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error(`Invalid --port: ${values.port}`);
   }
-  const token =
-    values.token ?? process.env.ENTRA_SCIM_MOCK_TOKEN ?? DEFAULT_MOCK_TOKEN;
+  const token = values.token ?? process.env.ENTRA_SCIM_MOCK_TOKEN ?? DEFAULT_MOCK_TOKEN;
 
   const seed = values["no-seed"]
     ? undefined
@@ -82,7 +81,7 @@ async function main(): Promise<void> {
   process.on("SIGTERM", shutdown);
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   process.stderr.write(
     `entra-scim-mock-server fatal: ${err instanceof Error ? err.message : String(err)}\n`,
   );

@@ -1,8 +1,16 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http";
-import { FilterValidationError, PatchValidationError } from "../scim/errors.js";
+import {
+  FilterValidationError,
+  PatchValidationError,
+  QueryValidationError,
+} from "../scim/errors.js";
 import { assertRawQueryHasNoWhitespaceAroundEquals } from "../scim/query.js";
 import { MockScimError, scimErrorBody } from "./errors.js";
-import { resourceTypeById, resourceTypesList, serviceProviderConfig } from "./data/discovery.js";
+import {
+  resourceTypeById,
+  resourceTypesList,
+  serviceProviderConfig,
+} from "./data/discovery.js";
 import { schemaById, schemasList } from "./data/schemas.js";
 import * as users from "./handlers/users.js";
 import * as groups from "./handlers/groups.js";
@@ -40,7 +48,7 @@ export function createRequestListener(config: RouterConfig): RequestListener {
   return (req, res) => {
     const started = Date.now();
     void handle(req, ctx, config).then((result) => {
-      sendResponse(res, result);
+      sendResponse(req, res, result);
       config.onTransaction?.({
         ts: new Date(started).toISOString(),
         request: {
@@ -77,7 +85,10 @@ async function handle(
     try {
       assertRawQueryHasNoWhitespaceAroundEquals(rawQuery);
     } catch (err) {
-      throw new MockScimError(400, (err as Error).message, "invalidValue");
+      // Only the whitespace rule belongs to this call; anything else is a bug
+      // here, not a bad request, and must not be relabelled as a 400.
+      if (!(err instanceof QueryValidationError)) throw err;
+      throw new MockScimError(400, err.message, "invalidValue");
     }
 
     // Bearer check.
@@ -100,7 +111,10 @@ async function handle(
           throw new MockScimError(400, `Accept header ${accept} is invalid.`);
         }
       } else if (!/application\/(scim\+)?json|\*\/\*/i.test(accept)) {
-        throw new MockScimError(400, "HTTP Accept header for application/json is missing.");
+        throw new MockScimError(
+          400,
+          "HTTP Accept header for application/json is missing.",
+        );
       }
     }
 
@@ -125,7 +139,8 @@ function route(
 ): HandlerResponse {
   const segments = path.split("/").filter(Boolean);
   const head = segments[0]?.toLowerCase();
-  const id = segments.length > 1 ? decodeURIComponent(segments.slice(1).join("/")) : undefined;
+  const id =
+    segments.length > 1 ? decodeURIComponent(segments.slice(1).join("/")) : undefined;
 
   if (head === "serviceproviderconfig" && method === "GET" && !id) {
     return { status: 200, body: serviceProviderConfig(ctx.validatorCompat) };
@@ -171,12 +186,21 @@ function normalizePath(rawPath: string): string {
   return rawPath.replace(/^\/(rp\/)?scim(?=\/|$)/i, "") || "/";
 }
 
+/**
+ * SCIM payloads are JSON attribute bags, never uploads, so a megabyte is
+ * already far more than any real request needs — the largest thing the tools
+ * send is a 20-member group PATCH.
+ */
+const MAX_BODY_BYTES = 1024 * 1024;
+
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(chunk as Buffer);
+  // An honest Content-Length lets us refuse before reading a single byte.
+  const declared = Number(req.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+    throw new MockScimError(413, tooLargeDetail(declared));
   }
-  const text = Buffer.concat(chunks).toString("utf8");
+
+  const text = await readCappedBody(req);
   if (text.length === 0) {
     throw new MockScimError(400, "Request body is required.", "invalidSyntax");
   }
@@ -185,6 +209,76 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   } catch {
     throw new MockScimError(400, "Request body is not valid JSON.", "invalidSyntax");
   }
+}
+
+/**
+ * Bytes we will read past the cap before giving up on answering cleanly.
+ *
+ * An ordinary oversized request finishes well inside this, so the client gets
+ * a real 413 on a connection that stays reusable. A stream that keeps coming
+ * gets the same 413, but sendResponse closes the connection under it, since
+ * the body was never read to the end. Nothing past MAX_BODY_BYTES is retained
+ * either way — the drain exists to be polite, not to buffer.
+ */
+const MAX_DRAIN_BYTES = 8 * MAX_BODY_BYTES;
+
+/**
+ * Buffer the body, refusing anything past MAX_BODY_BYTES.
+ *
+ * On the event API rather than `for await` because leaving a `for await` early
+ * destroys the request stream, and with it the socket — the client would get a
+ * connection reset in place of its 413.
+ */
+function readCappedBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let chunks: Buffer[] = [];
+    let total = 0;
+    let oversize = false;
+
+    const cleanup = (): void => {
+      req.off("data", onData);
+      req.off("end", onEnd);
+      req.off("error", onError);
+    };
+    const onData = (chunk: Buffer): void => {
+      total += chunk.length;
+      if (total > MAX_BODY_BYTES) {
+        // Release everything held; from here we only count.
+        if (!oversize) {
+          oversize = true;
+          chunks = [];
+        }
+        if (total > MAX_DRAIN_BYTES) {
+          cleanup();
+          req.pause();
+          reject(new MockScimError(413, tooLargeDetail(total)));
+        }
+        return;
+      }
+      chunks.push(chunk);
+    };
+    const onEnd = (): void => {
+      cleanup();
+      if (oversize) {
+        reject(new MockScimError(413, tooLargeDetail(total)));
+        return;
+      }
+      resolve(Buffer.concat(chunks).toString("utf8"));
+    };
+    const onError = (err: Error): void => {
+      cleanup();
+      reject(err);
+    };
+
+    req.on("data", onData);
+    req.on("end", onEnd);
+    req.on("error", onError);
+  });
+}
+
+/** RFC 7644 defines scimType only for 400s, so a 413 carries detail alone. */
+function tooLargeDetail(bytes: number): string {
+  return `Request body exceeds the ${MAX_BODY_BYTES} byte limit (${bytes} bytes).`;
 }
 
 function errorResponse(err: unknown): HandlerResponse {
@@ -204,7 +298,11 @@ function errorResponse(err: unknown): HandlerResponse {
   return { status: 500, body: scimErrorBody(500, message) };
 }
 
-function sendResponse(res: ServerResponse, result: HandledRequest): void {
+function sendResponse(
+  req: IncomingMessage,
+  res: ServerResponse,
+  result: HandledRequest,
+): void {
   const { status, body, headers } = result.response;
   const outHeaders: Record<string, string> = { ...headers };
   let payload: string | undefined;
@@ -212,6 +310,13 @@ function sendResponse(res: ServerResponse, result: HandledRequest): void {
     payload = JSON.stringify(body, null, 2);
     outHeaders["Content-Type"] = "application/scim+json";
   }
+  // Answering while the request body is still in flight — an oversized
+  // Content-Length refused up front, or any POST/PATCH rejected before
+  // readJsonBody runs, such as a bad bearer — leaves unread bytes in the pipe.
+  // On a keep-alive connection those would be parsed as the head of the next
+  // request; HTTP's answer is to close, and node then discards the remainder
+  // instead of buffering it.
+  if (!req.readableEnded) outHeaders.Connection = "close";
   res.writeHead(status, outHeaders);
   res.end(payload);
 }

@@ -197,10 +197,14 @@ async function main(): Promise<void> {
     try {
       result = await mcp.callTool({ name: tool, arguments: args });
     } catch (err) {
-      record(tool, "FAIL", `transport: ${err instanceof Error ? err.message : String(err)}`);
+      record(
+        tool,
+        "FAIL",
+        `transport: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return null;
     }
-    const out = (result.structuredContent ?? {}) as ToolOutput;
+    const out: ToolOutput = result.structuredContent ?? {};
 
     if (result.isError) {
       const parts = [
@@ -215,7 +219,11 @@ async function main(): Promise<void> {
     // wrapTool turns a dry-run into a successful "here is the request I would
     // have sent" payload, not an error.
     if (out.dryRun) {
-      record(tool, "PASS", `dry-run ${out.request?.method} ${shortPath(out.request?.url)}`);
+      record(
+        tool,
+        "PASS",
+        `dry-run ${out.request?.method} ${shortPath(out.request?.url)}`,
+      );
       return { ...out, id: `dry-run-${tool}` };
     }
 
@@ -321,7 +329,12 @@ async function main(): Promise<void> {
     const [user1, user2] = userIds;
 
     if (!user1) {
-      for (const t of ["get_user", "update_user", "list_users", "update_user_lifecycle"]) {
+      for (const t of [
+        "get_user",
+        "update_user",
+        "list_users",
+        "update_user_lifecycle",
+      ]) {
         skip(t, "provision_user failed for user 1");
       }
       skip("get_user_custom_security_attributes", "provision_user failed for user 1");
@@ -346,7 +359,10 @@ async function main(): Promise<void> {
 
       await call(
         "list_users",
-        { filter: [{ attr: "userName", op: "eq", value: identities[0]!.userName }], count: 5 },
+        {
+          filter: [{ attr: "userName", op: "eq", value: identities[0]!.userName }],
+          count: 5,
+        },
         (out) =>
           (out.resources ?? []).some((r: any) => r.id === user1)
             ? undefined
@@ -379,7 +395,11 @@ async function main(): Promise<void> {
         await call("update_user_custom_security_attributes", {
           id: user1,
           operations: [
-            { op: "add", path: `${SCHEMA_ENTRA_CSA}:${csaSet}.${csaAttr}`, value: csaValue },
+            {
+              op: "add",
+              path: `${SCHEMA_ENTRA_CSA}:${csaSet}.${csaAttr}`,
+              value: csaValue,
+            },
           ],
         });
       } else {
@@ -423,7 +443,9 @@ async function main(): Promise<void> {
 
       await call("update_group", {
         id: groupId,
-        operations: [{ op: "replace", path: "displayName", value: `${groupName} (updated)` }],
+        operations: [
+          { op: "replace", path: "displayName", value: `${groupName} (updated)` },
+        ],
       });
 
       const memberIds = [user1, user2].filter((id): id is string => Boolean(id));
@@ -437,7 +459,10 @@ async function main(): Promise<void> {
         // The documented way to read membership: get_group never returns it.
         await call(
           "list_groups",
-          { filter: [{ attr: "members.value", op: "eq", value: memberIds[0]! }], count: 5 },
+          {
+            filter: [{ attr: "members.value", op: "eq", value: memberIds[0]! }],
+            count: 5,
+          },
           (out) => {
             if (!added) return undefined;
             return (out.resources ?? []).some((r: any) => r.id === groupId)
@@ -615,7 +640,9 @@ async function runCsaOnly(
     // never spell out for CSAs. Deprovisioning workflows need this to work.
     const removable = assigned.find((a) => !Array.isArray(a.value));
     if (!removable) {
-      process.stdout.write("      note: no single-valued attribute assigned, skipping remove\n");
+      process.stdout.write(
+        "      note: no single-valued attribute assigned, skipping remove\n",
+      );
     } else {
       const removed = await call("update_user_custom_security_attributes", {
         id,
@@ -727,16 +754,20 @@ function summarize(opts: { sweepOnly: boolean }): void {
 }
 
 function describe(tool: string, out: ToolOutput): string {
-  if (out.id && (tool === "provision_user" || tool === "create_group")) return `id=${out.id}`;
+  if (out.id && (tool === "provision_user" || tool === "create_group"))
+    return `id=${out.id}`;
   if (out.totalResults !== undefined) return `totalResults=${out.totalResults}`;
-  if (out.memberIds) return `${out.memberIds.length} member(s), ${out.patchCalls} PATCH call(s)`;
+  if (out.memberIds)
+    return `${out.memberIds.length} member(s), ${out.patchCalls} PATCH call(s)`;
   if (out.id) return `id=${out.id}`;
   if (out.ok) return "ok";
   return "";
 }
 
 function shortPath(url: unknown): string {
-  const s = String(url ?? "");
+  // Anything that is not a string has no path to shorten, and String() on an
+  // object would write "[object Object]" into the run log.
+  const s = typeof url === "string" ? url : "";
   const i = s.indexOf("/rp/scim");
   return i === -1 ? s : s.slice(i + "/rp/scim".length) || "/";
 }
@@ -845,7 +876,7 @@ Optional: ENTRA_SCIM_SMOKE_CSA_SET, ENTRA_SCIM_SMOKE_CSA_ATTR and
 ENTRA_SCIM_SMOKE_CSA_VALUE, to cover the two Custom Security Attribute tools.
 `;
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   process.stderr.write(
     `\nlive-smoke fatal: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`,
   );

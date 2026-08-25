@@ -17,11 +17,7 @@ import {
 import { MockScimError } from "./errors.js";
 import type { MockStore, StoredGroup, StoredUser } from "./store.js";
 
-const USER_URNS = [
-  SCHEMA_ENTERPRISE_USER,
-  SCHEMA_ENTRA_USER,
-  SCHEMA_ENTRA_CSA,
-];
+const USER_URNS = [SCHEMA_ENTERPRISE_USER, SCHEMA_ENTRA_USER, SCHEMA_ENTRA_CSA];
 const GROUP_URNS = [SCHEMA_ENTRA_GROUP];
 const USER_CORE_URNS = [SCHEMA_USER_CORE];
 const GROUP_CORE_URNS = [SCHEMA_GROUP_CORE];
@@ -58,7 +54,7 @@ export function applyUserPatch(
  * that, or the mock reports a cleared attribute as present-but-empty.
  */
 function dropEmptyCsaValues(user: StoredUser): void {
-  const csa = user[SCHEMA_ENTRA_CSA] as Record<string, unknown> | undefined;
+  const csa = user[SCHEMA_ENTRA_CSA];
   if (!csa || typeof csa !== "object") return;
   for (const [setName, set] of Object.entries(csa)) {
     if (!set || typeof set !== "object") continue;
@@ -77,9 +73,7 @@ function dropEmptyCsaValues(user: StoredUser): void {
  * string is the validator's "remove manager" form and is left untouched.
  */
 function normalizeManager(user: StoredUser): void {
-  const ext = user[SCHEMA_ENTERPRISE_USER] as
-    | { manager?: unknown }
-    | undefined;
+  const ext = user[SCHEMA_ENTERPRISE_USER] as { manager?: unknown } | undefined;
   if (!ext || typeof ext !== "object") return;
   if (typeof ext.manager === "string" && ext.manager.length > 0) {
     ext.manager = { value: ext.manager };
@@ -138,9 +132,7 @@ function extractMemberIds(op: ScimPatchOperation): string[] {
         ? (entry as { value?: unknown }).value
         : undefined;
     if (typeof value !== "string" || value.length === 0) {
-      throw new PatchValidationError(
-        `Member entry ${idx} is missing a string 'value'.`,
-      );
+      throw new PatchValidationError(`Member entry ${idx} is missing a string 'value'.`);
     }
     return value;
   });
@@ -202,7 +194,10 @@ function applyOperation(
       const existing = target[key];
       target[key] =
         op.op === "add" && existing && typeof existing === "object"
-          ? { ...(existing as Record<string, unknown>), ...(op.value as Record<string, unknown>) }
+          ? {
+              ...(existing as Record<string, unknown>),
+              ...(op.value as Record<string, unknown>),
+            }
           : op.value;
     } else {
       throw new MockScimError(
@@ -236,12 +231,7 @@ function applyPathlessOperation(
     );
   }
   for (const [key, value] of Object.entries(op.value)) {
-    applyOperation(
-      target,
-      { op: op.op, path: key, value },
-      extensionUrns,
-      coreUrns,
-    );
+    applyOperation(target, { op: op.op, path: key, value }, extensionUrns, coreUrns);
   }
 }
 
@@ -320,9 +310,7 @@ function applySegments(
     const existing = current[key];
     if (op.op === "remove") {
       if (Array.isArray(existing)) {
-        current[key] = existing.filter(
-          (el) => !elementMatches(el, last.filter!),
-        );
+        current[key] = existing.filter((el) => !elementMatches(el, last.filter!));
       }
       return;
     }
@@ -416,8 +404,7 @@ function elementMatches(element: unknown, conditions: FilterCondition[]): boolea
       return actual === cond.value;
     }
     return (
-      typeof actual === "string" &&
-      actual.toLowerCase() === cond.value.toLowerCase()
+      typeof actual === "string" && actual.toLowerCase() === cond.value.toLowerCase()
     );
   });
 }
@@ -425,6 +412,10 @@ function elementMatches(element: unknown, conditions: FilterCondition[]): boolea
 function parseSegments(rest: string, fullPath: string): PathSegment[] {
   const segments: PathSegment[] = [];
   let remaining = rest;
+  // The \[ is redundant inside the character class, but it keeps the pair
+  // symmetric with the \] that is required, which reads better in a pattern
+  // this dense.
+  // eslint-disable-next-line no-useless-escape
   const segPattern = /^([^.\[\]]+)(\[((?:[^"\]]|"(?:[^"\\]|\\.)*")*)\])?/;
   while (remaining.length > 0) {
     const match = remaining.match(segPattern);
@@ -495,10 +486,7 @@ function parseSegmentFilter(raw: string, fullPath: string): FilterCondition[] {
 }
 
 /** Case-insensitive key lookup (SCIM attribute names are case-insensitive). */
-function resolveKey(
-  obj: Record<string, unknown>,
-  name: string,
-): string | undefined {
+function resolveKey(obj: Record<string, unknown>, name: string): string | undefined {
   if (name in obj) return name;
   const lower = name.toLowerCase();
   return Object.keys(obj).find((key) => key.toLowerCase() === lower);

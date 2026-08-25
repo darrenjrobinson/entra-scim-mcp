@@ -23,7 +23,12 @@ process.stderr.write(
 
 if (!existsSync(entry)) {
   process.stderr.write(
-    `dev-server: ${entry} not found. Build it first:\n  cd node && npm run build\n`,
+    `dev-server: ${entry} not found.\n` +
+      `This launcher runs the *built* server. From a fresh clone:\n` +
+      `  cd node && npm install\n` +
+      `which builds it through the "prepare" script. To rebuild by hand:\n` +
+      `  cd node && npm run build\n` +
+      `Then restart your MCP client so it relaunches this command.\n`,
   );
   process.exit(1);
 }

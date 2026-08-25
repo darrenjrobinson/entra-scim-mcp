@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-// @ts-expect-error - plain .mjs dev-script helper, no type declarations
+// Plain .mjs dev-script helper; tsconfig.test.json sets allowJs so it resolves.
 import { loadDotEnv } from "../scripts/lib/dotenv.mjs";
 
 const dirs: string[] = [];
@@ -22,7 +22,10 @@ afterEach(() => {
 describe("loadDotEnv", () => {
   it("parses simple assignments and reports the keys applied", () => {
     const env: Record<string, string | undefined> = {};
-    const applied = loadDotEnv(envFile("ENTRA_TENANT_ID=abc\nENTRA_CLIENT_ID=def\n"), env);
+    const applied = loadDotEnv(
+      envFile("ENTRA_TENANT_ID=abc\nENTRA_CLIENT_ID=def\n"),
+      env,
+    );
     expect(env).toEqual({ ENTRA_TENANT_ID: "abc", ENTRA_CLIENT_ID: "def" });
     expect(applied).toEqual(["ENTRA_TENANT_ID", "ENTRA_CLIENT_ID"]);
   });

@@ -42,9 +42,7 @@ export function parseFilter(
   while (true) {
     const match = rest.match(clausePattern);
     if (!match) {
-      throw new FilterValidationError(
-        `Unparseable filter near: ${rest.slice(0, 40)}`,
-      );
+      throw new FilterValidationError(`Unparseable filter near: ${rest.slice(0, 40)}`);
     }
     clauses.push({
       attr: match[1]!,
@@ -82,9 +80,7 @@ export function userMatches(
   return clauses.every((clause) => {
     const attr = clause.attr;
     if (attr.toLowerCase() === "groups.value") {
-      return ctx
-        .groupIdsOfUser(user.id)
-        .some((gid) => equalsCi(gid, clause.value));
+      return ctx.groupIdsOfUser(user.id).some((gid) => equalsCi(gid, clause.value));
     }
     return compare(resolveAttrValue(user, attr), clause);
   });
@@ -146,10 +142,7 @@ function findValueCi(obj: Record<string, unknown>, name: string): unknown {
   return key ? obj[key] : undefined;
 }
 
-function compare(
-  actual: string | undefined,
-  clause: ValidatedFilterClause,
-): boolean {
+function compare(actual: string | undefined, clause: ValidatedFilterClause): boolean {
   if (typeof actual !== "string") return false;
   if (clause.op === "eq") return equalsCi(actual, clause.value);
   return actual.toLowerCase().endsWith(clause.value.toLowerCase());

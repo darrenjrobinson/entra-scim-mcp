@@ -28,23 +28,29 @@ beforeAll(async () => {
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   mcp = new Client({ name: "e2e", version: "0.0.0" });
-  await Promise.all([
-    server.connect(serverTransport),
-    mcp.connect(clientTransport),
-  ]);
+  await Promise.all([server.connect(serverTransport), mcp.connect(clientTransport)]);
 });
 
 afterAll(async () => {
   await mock.close();
 });
 
-async function callOk(name: string, args: Record<string, unknown>): Promise<Record<string, any>> {
+async function callOk(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, any>> {
   const result = await mcp.callTool({ name, arguments: args });
-  expect(result.isError, `${name} unexpectedly failed: ${JSON.stringify(result.structuredContent ?? result.content)}`).toBeFalsy();
+  expect(
+    result.isError,
+    `${name} unexpectedly failed: ${JSON.stringify(result.structuredContent ?? result.content)}`,
+  ).toBeFalsy();
   return (result.structuredContent ?? {}) as Record<string, any>;
 }
 
-async function callErr(name: string, args: Record<string, unknown>): Promise<Record<string, any>> {
+async function callErr(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, any>> {
   const result = await mcp.callTool({ name, arguments: args });
   expect(result.isError, `${name} unexpectedly succeeded`).toBe(true);
   return (result.structuredContent ?? {}) as Record<string, any>;
@@ -122,9 +128,7 @@ describe("triangle e2e: every tool against the in-process mock", () => {
       employeeLeaveDateTime: "2026-12-31T17:00:00Z",
     });
     const fetched = await callOk("get_user", { id: userId });
-    expect(fetched[SCHEMA_ENTRA_USER].employeeLeaveDateTime).toBe(
-      "2026-12-31T17:00:00Z",
-    );
+    expect(fetched[SCHEMA_ENTRA_USER].employeeLeaveDateTime).toBe("2026-12-31T17:00:00Z");
   });
 
   it("CSA update and set-qualified read round-trip", async () => {
@@ -161,11 +165,13 @@ describe("triangle e2e: every tool against the in-process mock", () => {
   });
 
   it("add_group_members chunks 25 ids into 2 PATCH calls", async () => {
-    memberIds = Array.from({ length: 24 }, (_, i) =>
-      mock.store.createUser({
-        schemas: [SCHEMA_USER_CORE],
-        userName: `member${i}@contoso.local`,
-      }).id,
+    memberIds = Array.from(
+      { length: 24 },
+      (_, i) =>
+        mock.store.createUser({
+          schemas: [SCHEMA_USER_CORE],
+          userName: `member${i}@contoso.local`,
+        }).id,
     );
     memberIds.push(userId);
 

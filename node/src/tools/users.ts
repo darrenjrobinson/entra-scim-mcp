@@ -14,6 +14,7 @@ import {
   type ScimListResponse,
   type ScimPatchOperation,
   type ScimUser,
+  type ScimUserCreatePayload,
 } from "../scim/types.js";
 
 const filterClauseSchema = z.object({
@@ -77,26 +78,28 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
         cursor: z.string().optional().describe("Pagination cursor from prior call."),
       },
     },
-    wrapTool(async (args: {
-      filter?: { attr: string; op: "eq" | "ew"; value: string }[];
-      attributes?: string[];
-      excludedAttributes?: string[];
-      count?: number;
-      cursor?: string;
-    }) => {
-      const result = await client.request<ScimListResponse<ScimUser>>({
-        method: "GET",
-        path: "/users",
-        query: {
-          filter: buildUserFilter(args.filter),
-          attributes: joinAttributes(args.attributes),
-          excludedAttributes: joinAttributes(args.excludedAttributes),
-          count: args.count,
-          cursor: args.cursor,
-        },
-      });
-      return normalizeListResponse(result);
-    }),
+    wrapTool(
+      async (args: {
+        filter?: { attr: string; op: "eq" | "ew"; value: string }[];
+        attributes?: string[];
+        excludedAttributes?: string[];
+        count?: number;
+        cursor?: string;
+      }) => {
+        const result = await client.request<ScimListResponse<ScimUser>>({
+          method: "GET",
+          path: "/users",
+          query: {
+            filter: buildUserFilter(args.filter),
+            attributes: joinAttributes(args.attributes),
+            excludedAttributes: joinAttributes(args.excludedAttributes),
+            count: args.count,
+            cursor: args.cursor,
+          },
+        });
+        return normalizeListResponse(result);
+      },
+    ),
   );
 
   server.registerTool(
@@ -110,20 +113,22 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
         excludedAttributes: z.array(z.string()).optional(),
       },
     },
-    wrapTool(async (args: {
-      id: string;
-      attributes?: string[];
-      excludedAttributes?: string[];
-    }) => {
-      return client.request<ScimUser>({
-        method: "GET",
-        path: `/users/${encodeURIComponent(args.id)}`,
-        query: {
-          attributes: joinAttributes(args.attributes),
-          excludedAttributes: joinAttributes(args.excludedAttributes),
-        },
-      });
-    }),
+    wrapTool(
+      async (args: {
+        id: string;
+        attributes?: string[];
+        excludedAttributes?: string[];
+      }) => {
+        return client.request<ScimUser>({
+          method: "GET",
+          path: `/users/${encodeURIComponent(args.id)}`,
+          query: {
+            attributes: joinAttributes(args.attributes),
+            excludedAttributes: joinAttributes(args.excludedAttributes),
+          },
+        });
+      },
+    ),
   );
 
   server.registerTool(
@@ -156,69 +161,71 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
           .describe("Entra object id of the user's manager."),
       },
     },
-    wrapTool(async (args: {
-      userName: string;
-      password: string;
-      displayName: string;
-      givenName: string;
-      familyName: string;
-      mailNickname: string;
-      active?: boolean;
-      externalId?: string;
-      userType?: string;
-      emails?: { value: string; type?: string; primary?: boolean }[];
-      phoneNumbers?: { value: string; type?: string; primary?: boolean }[];
-      addresses?: {
-        type?: string;
-        streetAddress?: string;
-        locality?: string;
-        region?: string;
-        postalCode?: string;
-        country?: string;
-        formatted?: string;
-        primary?: boolean;
-      }[];
-      department?: string;
-      employeeNumber?: string;
-      managerId?: string;
-    }) => {
-      const enterprise: Record<string, unknown> = {};
-      if (args.department) enterprise.department = args.department;
-      if (args.employeeNumber) enterprise.employeeNumber = args.employeeNumber;
-      if (args.managerId) enterprise.manager = { value: args.managerId };
+    wrapTool(
+      async (args: {
+        userName: string;
+        password: string;
+        displayName: string;
+        givenName: string;
+        familyName: string;
+        mailNickname: string;
+        active?: boolean;
+        externalId?: string;
+        userType?: string;
+        emails?: { value: string; type?: string; primary?: boolean }[];
+        phoneNumbers?: { value: string; type?: string; primary?: boolean }[];
+        addresses?: {
+          type?: string;
+          streetAddress?: string;
+          locality?: string;
+          region?: string;
+          postalCode?: string;
+          country?: string;
+          formatted?: string;
+          primary?: boolean;
+        }[];
+        department?: string;
+        employeeNumber?: string;
+        managerId?: string;
+      }) => {
+        const enterprise: Record<string, unknown> = {};
+        if (args.department) enterprise.department = args.department;
+        if (args.employeeNumber) enterprise.employeeNumber = args.employeeNumber;
+        if (args.managerId) enterprise.manager = { value: args.managerId };
 
-      const entra: Record<string, unknown> = { mailNickname: args.mailNickname };
-      if (args.userType) entra.userType = args.userType;
+        const entra: Record<string, unknown> = { mailNickname: args.mailNickname };
+        if (args.userType) entra.userType = args.userType;
 
-      const schemas = [SCHEMA_USER_CORE, SCHEMA_ENTRA_USER];
-      if (Object.keys(enterprise).length > 0) schemas.push(SCHEMA_ENTERPRISE_USER);
+        const schemas = [SCHEMA_USER_CORE, SCHEMA_ENTRA_USER];
+        if (Object.keys(enterprise).length > 0) schemas.push(SCHEMA_ENTERPRISE_USER);
 
-      const body: ScimUser = {
-        schemas,
-        userName: args.userName,
-        password: args.password,
-        displayName: args.displayName,
-        active: args.active ?? true,
-        name: {
-          givenName: args.givenName,
-          familyName: args.familyName,
-        },
-        ...(args.externalId ? { externalId: args.externalId } : {}),
-        ...(args.emails ? { emails: args.emails } : {}),
-        ...(args.phoneNumbers ? { phoneNumbers: args.phoneNumbers } : {}),
-        ...(args.addresses ? { addresses: args.addresses } : {}),
-        [SCHEMA_ENTRA_USER]: entra,
-        ...(Object.keys(enterprise).length > 0
-          ? { [SCHEMA_ENTERPRISE_USER]: enterprise }
-          : {}),
-      };
+        const body: ScimUserCreatePayload = {
+          schemas,
+          userName: args.userName,
+          password: args.password,
+          displayName: args.displayName,
+          active: args.active ?? true,
+          name: {
+            givenName: args.givenName,
+            familyName: args.familyName,
+          },
+          ...(args.externalId ? { externalId: args.externalId } : {}),
+          ...(args.emails ? { emails: args.emails } : {}),
+          ...(args.phoneNumbers ? { phoneNumbers: args.phoneNumbers } : {}),
+          ...(args.addresses ? { addresses: args.addresses } : {}),
+          [SCHEMA_ENTRA_USER]: entra,
+          ...(Object.keys(enterprise).length > 0
+            ? { [SCHEMA_ENTERPRISE_USER]: enterprise }
+            : {}),
+        };
 
-      return client.request<ScimUser>({
-        method: "POST",
-        path: "/users",
-        body,
-      });
-    }),
+        return client.request<ScimUser>({
+          method: "POST",
+          path: "/users",
+          body,
+        });
+      },
+    ),
   );
 
   server.registerTool(
@@ -226,7 +233,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
     {
       title: "Update user",
       description:
-        "PATCH a user. Operations are validated: removing mailNickname (or nulling it out) is blocked, and addresses[...] paths must use exactly [type eq \"work\"]. Other complex multi-valued paths (e.g. emails[type eq \"work\" and primary eq true].value) are passed through as-is.",
+        'PATCH a user. Operations are validated: removing mailNickname (or nulling it out) is blocked, and addresses[...] paths must use exactly [type eq "work"]. Other complex multi-valued paths (e.g. emails[type eq "work" and primary eq true].value) are passed through as-is.',
       inputSchema: {
         id: z.string().min(1),
         operations: z.array(patchOpSchema).min(1),

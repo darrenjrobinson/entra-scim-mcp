@@ -14,13 +14,14 @@ import {
   type PageParams,
 } from "./shared.js";
 
-export function listGroups(
-  ctx: HandlerContext,
-  query: URLSearchParams,
-): HandlerResponse {
+export function listGroups(ctx: HandlerContext, query: URLSearchParams): HandlerResponse {
   let groups = ctx.store.listGroups();
   const rawFilter = query.get("filter");
-  if (rawFilter) {
+  // `get` returns "" for a present-but-empty `?filter=` and null when the
+  // parameter is absent. Only the second means "no filter": an empty value is
+  // a client asking to filter and supplying nothing, and it goes to the parser
+  // to be rejected like the whitespace-only filter it is a hair away from.
+  if (rawFilter !== null) {
     const clauses = parseGroupFilter(rawFilter, ctx.validatorCompat);
     groups = groups.filter((group) => groupMatches(group, clauses));
   }
@@ -60,7 +61,11 @@ export function createGroup(ctx: HandlerContext, body: unknown): HandlerResponse
   }
   const group = body as ScimGroup;
   if (typeof group.displayName !== "string" || group.displayName.length === 0) {
-    throw new MockScimError(400, "Missing required attributes: displayName.", "invalidValue");
+    throw new MockScimError(
+      400,
+      "Missing required attributes: displayName.",
+      "invalidValue",
+    );
   }
   // Entra permits duplicate group displayNames, so strict mode accepts them.
   // The SCIM Validator treats displayName as the Group joining property and

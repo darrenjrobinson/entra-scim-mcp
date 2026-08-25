@@ -29,9 +29,7 @@ interface FixtureStep {
 async function main(): Promise<void> {
   const [input, output] = process.argv.slice(2);
   if (!input || !output) {
-    process.stderr.write(
-      "Usage: fixtures:convert -- <capture.jsonl> <fixture.json>\n",
-    );
+    process.stderr.write("Usage: fixtures:convert -- <capture.jsonl> <fixture.json>\n");
     process.exit(1);
   }
 
@@ -66,9 +64,7 @@ async function main(): Promise<void> {
       expect: { status: entry.response.status },
     };
     if (entry.response.body !== undefined) {
-      step.expect.bodySubset = stripVolatile(
-        aliasify(entry.response.body, aliasById),
-      );
+      step.expect.bodySubset = stripVolatile(aliasify(entry.response.body, aliasById));
     }
     const createdId = (entry.response.body as { id?: unknown } | undefined)?.id;
     if (
@@ -134,7 +130,7 @@ function stripVolatile(value: unknown): unknown {
   return value;
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });

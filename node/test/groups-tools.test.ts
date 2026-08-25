@@ -34,8 +34,8 @@ describe("add_group_members", () => {
   const memberIds = Array.from({ length: 25 }, (_, i) => `u-${i}`);
 
   it("reports success with the deduped ids and PATCH count", async () => {
-    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
-    const mcp = await connectedClient(fetcher as unknown as typeof fetch);
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+    const mcp = await connectedClient(fetcher);
 
     const result = await mcp.callTool({
       name: "add_group_members",
@@ -52,7 +52,7 @@ describe("add_group_members", () => {
 
   it("reports partial failure with added / failed / not-attempted ids", async () => {
     let call = 0;
-    const fetcher = vi.fn(async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => {
       call += 1;
       if (call === 1) return new Response(null, { status: 204 });
       return new Response(
@@ -64,7 +64,7 @@ describe("add_group_members", () => {
         { status: 400, headers: { "content-type": "application/scim+json" } },
       );
     });
-    const mcp = await connectedClient(fetcher as unknown as typeof fetch);
+    const mcp = await connectedClient(fetcher);
 
     const result = await mcp.callTool({
       name: "add_group_members",
@@ -82,14 +82,14 @@ describe("add_group_members", () => {
 
   it("marks later chunks as not attempted when an early chunk fails", async () => {
     const manyIds = Array.from({ length: 45 }, (_, i) => `u-${i}`);
-    const fetcher = vi.fn(
+    const fetcher = vi.fn<typeof fetch>(
       async () =>
-        new Response(
-          JSON.stringify({ status: "404", detail: "group not found" }),
-          { status: 404, headers: { "content-type": "application/scim+json" } },
-        ),
+        new Response(JSON.stringify({ status: "404", detail: "group not found" }), {
+          status: 404,
+          headers: { "content-type": "application/scim+json" },
+        }),
     );
-    const mcp = await connectedClient(fetcher as unknown as typeof fetch);
+    const mcp = await connectedClient(fetcher);
 
     const result = await mcp.callTool({
       name: "add_group_members",

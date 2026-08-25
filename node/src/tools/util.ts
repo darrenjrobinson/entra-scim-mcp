@@ -3,6 +3,7 @@ import {
   DryRunRequest,
   FilterValidationError,
   PatchValidationError,
+  QueryValidationError,
   ScimError,
 } from "../scim/errors.js";
 
@@ -44,6 +45,38 @@ export function joinAttributes(names: string[] | undefined): string | undefined 
   return names?.length ? names.join(",") : undefined;
 }
 
+/** Keys whose value must never appear in a tool result. Matched case-insensitively. */
+const SECRET_KEYS = new Set(["password"]);
+
+/**
+ * Remove secret-bearing keys from anything a tool is about to hand back.
+ *
+ * Applied at the boundary rather than at the one call site that sends a
+ * password, because the boundary is the thing that cannot be forgotten: a tool
+ * added later, an API that starts echoing a field it currently declares
+ * `writeOnly`/`returned: never`, or this client pointed at a different SCIM
+ * backend are all covered without anyone remembering to.
+ *
+ * It is not decoration. Dry-run reflects the outbound request back as the tool
+ * result, so `provision_user --dry-run` handed the model the plaintext
+ * password it had just been given — the one payload in the system that
+ * genuinely holds a secret.
+ *
+ * Walks arrays and nested objects; primitives, null and undefined pass through
+ * unchanged. Responses are parsed JSON, so there are no cycles to guard.
+ */
+export function stripSecrets(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripSecrets);
+  if (value === null || typeof value !== "object") return value;
+
+  const out: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+    if (SECRET_KEYS.has(key.toLowerCase())) continue;
+    out[key] = stripSecrets(nested);
+  }
+  return out;
+}
+
 export function wrapTool<Args>(
   handler: (args: Args) => Promise<unknown>,
 ): ToolHandler<Args> {
@@ -57,7 +90,8 @@ export function wrapTool<Args>(
   };
 }
 
-function successResult(value: unknown): ToolResult {
+function successResult(raw: unknown): ToolResult {
+  const value = stripSecrets(raw);
   if (value === undefined) {
     return {
       content: [{ type: "text", text: "OK" }],
@@ -77,7 +111,7 @@ function errorResult(err: unknown): ToolResult {
     // would have sent.
     const payload: Record<string, unknown> = {
       dryRun: true,
-      request: err.request as unknown as Record<string, unknown>,
+      request: stripSecrets(err.request),
     };
     return {
       content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
@@ -107,6 +141,7 @@ function errorResult(err: unknown): ToolResult {
   if (
     err instanceof FilterValidationError ||
     err instanceof PatchValidationError ||
+    err instanceof QueryValidationError ||
     err instanceof ConfigError
   ) {
     const payload: Record<string, unknown> = {

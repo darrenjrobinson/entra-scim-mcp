@@ -1,0 +1,11 @@
+dist/
+coverage/
+captures/
+node_modules/
+package-lock.json
+# Recorded verbatim from the SCIM Validator; reformatting would obscure the diff
+# when a session is re-captured.
+test/fixtures/
+# Copied in from the repo root at pack time.
+README.md
+LICENSE

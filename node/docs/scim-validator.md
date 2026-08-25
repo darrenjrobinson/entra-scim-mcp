@@ -1,6 +1,6 @@
 # Testing with the Microsoft SCIM Validator
 
-The [Microsoft SCIM Validator](https://scimvalidator.microsoft.com) contract-tests a SCIM endpoint the way Entra's *outbound* provisioning client would use it: schema discovery, user/group CRUD, PATCH semantics, filtering. Pointing it at `entra-scim-mock-server` validates the SCIM plumbing this project relies on — without touching the billed Entra SCIM Provisioning API.
+The [Microsoft SCIM Validator](https://scimvalidator.microsoft.com) contract-tests a SCIM endpoint the way Entra's _outbound_ provisioning client would use it: schema discovery, user/group CRUD, PATCH semantics, filtering. Pointing it at `entra-scim-mock-server` validates the SCIM plumbing this project relies on — without touching the billed Entra SCIM Provisioning API.
 
 ## What this proves (and what it can't)
 
@@ -37,7 +37,7 @@ Note the validator expects RFC-standard SCIM, while Entra's inbound API has stri
    # or VS Code: Ports panel → Forward a Port → 8990 → Public
    ```
 
-3. **Point the validator at the tunnel URL** at https://scimvalidator.microsoft.com — choose *Discover schema*, set the bearer token to the mock's token (`dev-token` unless you passed `--token`), and run the User (and optionally Group) test suites.
+3. **Point the validator at the tunnel URL** at https://scimvalidator.microsoft.com — choose _Discover schema_, set the bearer token to the mock's token (`dev-token` unless you passed `--token`), and run the User (and optionally Group) test suites.
 
 4. **Convert the captured session into a replay fixture:**
 
@@ -84,11 +84,11 @@ A capture may contain more than one validator run (each starts with `GET /Schema
 
 ## Strict mode vs validator-compat
 
-| Behavior | strict (default) | `--validator-compat` |
-| --- | --- | --- |
-| Filters | Entra allow-list only (`eq`/`ew`, `and`-only) | any parseable `attr op "value"` filter |
-| Pagination | cursor only | cursor + `startIndex`/`count` |
-| Group reads | `members` never returned | `members` included |
-| Group membership PATCH | single-op, 20-add cap, single remove | RFC-standard (mixed ops, `replace`, multi-remove) |
-| PATCH response | `204 No Content` | `200` + updated resource |
-| Accept header | must allow JSON (like the real API) | not enforced |
+| Behavior               | strict (default)                              | `--validator-compat`                              |
+| ---------------------- | --------------------------------------------- | ------------------------------------------------- |
+| Filters                | Entra allow-list only (`eq`/`ew`, `and`-only) | any parseable `attr op "value"` filter            |
+| Pagination             | cursor only                                   | cursor + `startIndex`/`count`                     |
+| Group reads            | `members` never returned                      | `members` included                                |
+| Group membership PATCH | single-op, 20-add cap, single remove          | RFC-standard (mixed ops, `replace`, multi-remove) |
+| PATCH response         | `204 No Content`                              | `200` + updated resource                          |
+| Accept header          | must allow JSON (like the real API)           | not enforced                                      |
