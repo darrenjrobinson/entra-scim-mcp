@@ -33,6 +33,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "prepare": "npm run build",
     "prepack": "node -e \"const fs=require('fs');for (const f of ['README.md','LICENSE']) fs.copyFileSync('../'+f, f)\"",
     "prepublishOnly": "npm run build"
   },

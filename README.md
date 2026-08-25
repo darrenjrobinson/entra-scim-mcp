@@ -271,7 +271,15 @@ The pattern worth taking away: **mock leniency hides real API behaviour.** Every
 
 ### Driving the live tenant conversationally
 
-The repo-root `.mcp.json` registers the server with Claude Code using `scripts/dev-server.mjs`, which loads `node/.env` and starts the built server — so no secret goes into a committed config file. Build first, then restart your client:
+The repo-root `.mcp.json` registers the server with Claude Code using `scripts/dev-server.mjs`, which loads `node/.env` and starts the built server — so no secret goes into a committed config file.
+
+It runs the **built** server, so `node/dist` has to exist before your MCP client can launch it. A fresh clone gets there with:
+
+```bash
+cd node && npm install     # the "prepare" script builds as part of install
+```
+
+After any source change, rebuild and restart your client so it relaunches the command:
 
 ```bash
 cd node && npm run build
@@ -281,12 +289,19 @@ cd node && npm run build
 
 ```bash
 cd node
-npm install
+npm install             # installs, then builds via "prepare"
 npm test
-npm run build
+npm run lint            # ESLint, type-aware
+npm run format:check    # Prettier
+npm run typecheck       # strict tsc over src, test and scripts
+npm run test:coverage   # vitest with the coverage gate
+npm run build           # rebuild after a source change
 npm run mock            # run the local mock server (tsx, no build needed)
 npm run mock:capture    # mock in validator-compat mode, capturing traffic to captures/
 ```
+
+`npm run lint`, `format:check`, `typecheck` and `test` are the four gates CI
+runs on every push and pull request, alongside `npm audit --audit-level=high`.
 
 The server has no test dependency on a real tenant. Unit tests cover the filter, patch, query, and client layers; integration tests boot the in-process mock server and drive **every MCP tool end-to-end** over real HTTP (`node/test/integration/`). Captured [SCIM Validator](node/docs/scim-validator.md) sessions convert into replay fixtures with `npm run fixtures:convert`. For the one thing none of that can prove — that the live API accepts these payloads — see [Testing against a real tenant](#testing-against-a-real-tenant).
 
