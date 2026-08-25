@@ -2,9 +2,12 @@ name: Release
 
 # Tag-driven. `npm version <patch|minor|major>` in node/ writes the version into
 # package.json, package-lock.json and server.json (the `version` lifecycle
-# script), commits and tags it; pushing that tag runs this.
+# script) but does NOT commit or tag — npm looks for .git beside the package and
+# this repo keeps it a level up, so it quietly skips those steps. Commit and tag
+# by hand, then push the tag to run this:
 #
-#   cd node && npm version minor && git push --follow-tags
+#   cd node && npm version minor && cd ..
+#   git commit -m "v0.2.0" && git tag v0.2.0 && git push --follow-tags
 #
 # workflow_dispatch exists to re-run a release that failed partway, and GitHub
 # lets a manual run target a tag. It cannot be used to publish an untagged

@@ -324,16 +324,27 @@ npm package it points at). One command writes all of them:
 
 ```bash
 cd node
-npm version minor          # or patch / major
+npm version minor          # or patch / major — writes all four, stages three
+cd ..
+git commit -m "v0.2.0"     # the version npm just printed
+git tag v0.2.0
 git push --follow-tags
 ```
 
 `npm version` bumps package.json and the lockfile, then the `version` lifecycle
-script propagates it to `server.json` and stages the result, so the commit and
-tag it creates are already consistent. `npm run check:version` verifies that,
-and CI runs it on every push; the release workflow runs it again against the tag
-itself. The version the server reports in its MCP handshake is read from
-package.json at runtime, so it follows automatically.
+script propagates it to `server.json` and stages the result. It does **not**
+commit or tag, even though `npm version` normally does both: npm looks for
+`.git` beside the package it is versioning, this package lives in `node/`, and
+the repository's `.git` is a level up — so npm decides it is not in a git
+repository and skips those steps without saying so. Hence the explicit commit
+and tag above. Get this wrong and `git push --follow-tags` silently pushes
+nothing, because the tag it would follow was never created.
+
+`npm run check:version` verifies all four agree, CI runs it on every push, and
+the release workflow runs it again against the tag itself — so a tag that
+disagrees with package.json fails before anything is published. The version the
+server reports in its MCP handshake is read from package.json at runtime, so it
+follows automatically.
 
 Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml):
 
