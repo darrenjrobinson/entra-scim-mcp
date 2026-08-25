@@ -85,6 +85,64 @@ describe("MockStore groups and membership", () => {
     expect(store.groupIdsOfUser(u1.id)).toEqual([]);
   });
 
+  // Every case below was measured against a live tenant on 2026-08-25 with
+  // scripts/probe-member-removal.ts. The rule the API applies is membership,
+  // not user existence: a remove whose filter matches no member is a 404,
+  // whoever the id belongs to. The group kept a ballast member throughout, so
+  // none of this is an artefact of removing from an empty group.
+  it("404s when the id is a live user who was never a member", () => {
+    const store = new MockStore();
+    const ballast = store.createUser(user("ballast@x.com"));
+    const stranger = store.createUser(user("stranger@x.com"));
+    const g = store.createGroup(group("G"));
+    store.addGroupMembers(g.id, [ballast.id]);
+
+    // This used to be a silent no-op — the mock accepting a call the real API
+    // rejects, which is precisely the leniency that hides real behaviour.
+    const err = captureError(() => store.removeGroupMember(g.id, stranger.id));
+    expect((err as MockScimError).status).toBe(404);
+    expect(store.getGroup(g.id)?.members).toHaveLength(1);
+  });
+
+  it("404s when the id was never a user at all", () => {
+    const store = new MockStore();
+    const ballast = store.createUser(user("ballast@x.com"));
+    const g = store.createGroup(group("G"));
+    store.addGroupMembers(g.id, [ballast.id]);
+
+    const err = captureError(() => store.removeGroupMember(g.id, "never-a-user"));
+    expect((err as MockScimError).status).toBe(404);
+  });
+
+  it("404s for the delete-user-then-remove-membership ordering", () => {
+    const store = new MockStore();
+    const ballast = store.createUser(user("ballast@x.com"));
+    const subject = store.createUser(user("subject@x.com"));
+    const g = store.createGroup(group("G"));
+    store.addGroupMembers(g.id, [ballast.id, subject.id]);
+
+    // Deleting the user strips the membership first, so by the time the
+    // removal runs the filter matches nothing — same as any other non-member.
+    store.deleteUser(subject.id);
+    const err = captureError(() => store.removeGroupMember(g.id, subject.id));
+    expect((err as MockScimError).status).toBe(404);
+    expect(store.getGroup(g.id)?.members).toHaveLength(1);
+  });
+
+  it("names the group in the message, as the API does", () => {
+    const store = new MockStore();
+    const ballast = store.createUser(user("ballast@x.com"));
+    const g = store.createGroup(group("G"));
+    store.addGroupMembers(g.id, [ballast.id]);
+
+    // Reads oddly, since the group plainly exists — but a live probe with a
+    // bogus group id returned the same sentence naming that id, so the message
+    // echoes the PATCH target rather than the member.
+    const err = captureError(() => store.removeGroupMember(g.id, "no-such-member"));
+    expect((err as MockScimError).message).toContain(g.id);
+    expect((err as MockScimError).message).toContain("does not exist");
+  });
+
   it("removes deleted users from group membership", () => {
     const store = new MockStore();
     const u1 = store.createUser(user("a@x.com"));

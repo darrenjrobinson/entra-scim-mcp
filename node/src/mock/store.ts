@@ -177,33 +177,40 @@ export class MockStore {
   /**
    * Remove one member.
    *
-   * Removing a user that exists but is not currently a member is already a
-   * silent no-op — the filter matches nothing — so the operation is idempotent
-   * over every state reachable with a live member id.
+   * Verified against a live tenant on 2026-08-25 (see
+   * scripts/probe-member-removal.ts). The rule is *membership*, not user
+   * existence, and the API is stricter than this mock used to be:
    *
-   * A memberId naming no user at all is a 400, and that is deliberate rather
-   * than an oversight. It mirrors addGroupMembers, which rejects the same id
-   * with the same documented message, and it matches an API that resolves
-   * member references against the directory. The case this covers is
-   * deleteUser followed by remove_group_member: deleteUser has already
-   * stripped the membership, so the id no longer resolves. A mock that
-   * shrugged there would be more lenient than the thing it stands in for, and
-   * mock leniency is exactly what hid two live defects from this suite before.
+   *   real member                        204
+   *   live user who was never a member    404
+   *   GUID that was never a user          404
+   *   member whose user was just deleted  404
    *
-   * Not yet confirmed against a live tenant — the real API may well answer 204
-   * here. Until someone spends the call, strict is the direction that fails
-   * loudly rather than quietly.
+   * The middle case is the one that matters. This mock used to accept it
+   * silently — the remove filter matched nothing, so nothing happened — which
+   * meant client code could pass here and fail against the real API. It also
+   * answered 400 where the API answers 404.
+   *
+   * Deleting a user strips their memberships first, so the delete-then-remove
+   * ordering lands in the same place as any other non-member: 404, because by
+   * then the filter matches nothing. Confirmed by querying
+   * `list_groups?filter=members.value eq <id>` either side of the delete.
+   *
+   * The message names the *group* rather than the member, which reads oddly
+   * given the group plainly exists. That is what the API returns — a probe
+   * with a bogus group id produced the same sentence naming that id — so the
+   * mock reproduces it rather than improving on it.
    */
   removeGroupMember(groupId: string, memberId: string): void {
     const group = this.requireGroup(groupId);
-    if (!this.users.has(memberId)) {
+    const before = group.members.length;
+    group.members = group.members.filter((m) => m.value !== memberId);
+    if (group.members.length === before) {
       throw new MockScimError(
-        400,
-        `Resource '${memberId}' does not exist or one of its queried reference-property objects are not present.`,
-        "invalidValue",
+        404,
+        `Resource '${groupId}' does not exist or one of its queried reference-property objects are not present.`,
       );
     }
-    group.members = group.members.filter((m) => m.value !== memberId);
     group.meta = { ...group.meta, lastModified: isoNow() };
   }
 

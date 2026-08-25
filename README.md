@@ -181,6 +181,17 @@ Things the live API does that the docs either state ambiguously or not at all. E
 
 **Group `displayName` is not unique.** Entra accepts a duplicate group name and returns 201. RFC-oriented tooling often assumes 409 here, so do not rely on create failing to detect an existing group — filter first.
 
+**Removing a group member is about membership, not the user.** A `remove` on `members[value eq "<id>"]` that matches nothing is a **404**, whoever the id belongs to — a live user who was simply never in the group is refused exactly like a GUID that was never a user. Probed against a real tenant with a ballast member present throughout, so none of it is an artefact of emptying the group:
+
+| Case | Result |
+| --- | --- |
+| A real member | 204 |
+| A live user who was never a member | 404 |
+| A well-formed GUID that was never a user | 404 |
+| A member whose user was deleted first | 404 |
+
+Two consequences worth knowing. Deleting a user strips their memberships, so the delete-then-remove-membership ordering lands in the same place as any other non-member — confirmed by querying `list_groups` with a `members.value` filter either side of the delete. And the error message names the **group**, not the member (`Resource '<groupId>' does not exist or one of its queried reference-property objects are not present`), which reads oddly since the group plainly exists; a probe with a deliberately bogus group id returned the same sentence naming that id, so the text simply echoes the PATCH target. The mock reproduces all of this rather than improving on it. Re-run it with `npx tsx scripts/probe-member-removal.ts --confirm` (~17 billed calls).
+
 **Group reads never include members.** `get_group` returns no `members` array at any page size. To find a user's groups, filter the other way: `list_groups` with `members.value eq "<userId>"`.
 
 **Errors are structured, and worth surfacing verbatim.** Failures carry `status`, `scimType` and `detail`, and the `detail` text is unusually specific (it will name the offending operation index and constraint). The tools pass it through unchanged rather than flattening it to a message.
