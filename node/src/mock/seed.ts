@@ -49,7 +49,16 @@ export function demoSeed(): SeedData {
  * The shape is checked rather than asserted. A cast let anything through to
  * MockStore, where the wrong type surfaced as a SCIM 400 raised from inside a
  * store method — an error about a request, for a file, at a CLI that had not
- * started serving yet. Every rejection here names the file and the key.
+ * started serving yet. Worse, a nested shape the store dereferences without
+ * checking (`members: [null]`) reached it as a bare TypeError.
+ *
+ * So validation goes as deep as the store reads: the fields it requires, and
+ * every field it dereferences. Attributes beyond those stay unchecked on
+ * purpose — SCIM resources carry arbitrary URN-keyed extension objects, and a
+ * seed file is allowed to include them.
+ *
+ * Reference integrity is still the store's: a member naming a user that is not
+ * in the file is a semantic error, and MockStore reports it against the id.
  */
 export async function loadSeedFile(path: string): Promise<SeedData> {
   const text = await readFile(path, "utf8");
@@ -80,10 +89,64 @@ export async function loadSeedFile(path: string): Promise<SeedData> {
     );
   }
 
+  users?.forEach((user, i) => {
+    validateUser(path, `users[${i}]`, user);
+  });
+  groups?.forEach((group, i) => {
+    validateGroup(path, `groups[${i}]`, group);
+  });
+
+  // Checked above, field by field, for everything the store touches.
   return {
     ...(users ? { users: users as SeedData["users"] } : {}),
     ...(groups ? { groups: groups as SeedData["groups"] } : {}),
   };
+}
+
+/** MockStore.createUser rejects a missing userName; say so about the file. */
+function validateUser(path: string, at: string, user: Record<string, unknown>): void {
+  requireNonEmptyString(path, `${at}.userName`, user.userName);
+  optionalStringArray(path, `${at}.schemas`, user.schemas);
+}
+
+/**
+ * Groups need more care than users: MockStore.seed maps over `members` and
+ * reads `.value` off each entry without checking either.
+ */
+function validateGroup(path: string, at: string, group: Record<string, unknown>): void {
+  requireNonEmptyString(path, `${at}.displayName`, group.displayName);
+  optionalStringArray(path, `${at}.schemas`, group.schemas);
+
+  const members = group.members;
+  if (members === undefined || members === null) return;
+  if (!Array.isArray(members)) {
+    throw new Error(`Seed file ${path}: "${at}.members" must be an array.`);
+  }
+  members.forEach((member: unknown, i: number) => {
+    if (member === null || typeof member !== "object" || Array.isArray(member)) {
+      throw new Error(
+        `Seed file ${path}: "${at}.members[${i}]" must be a JSON object with a "value".`,
+      );
+    }
+    requireNonEmptyString(
+      path,
+      `${at}.members[${i}].value`,
+      (member as Record<string, unknown>).value,
+    );
+  });
+}
+
+function requireNonEmptyString(path: string, key: string, value: unknown): void {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`Seed file ${path}: "${key}" must be a non-empty string.`);
+  }
+}
+
+function optionalStringArray(path: string, key: string, value: unknown): void {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value) || value.some((v: unknown) => typeof v !== "string")) {
+    throw new Error(`Seed file ${path}: "${key}" must be an array of strings.`);
+  }
 }
 
 /** Validate an optional top-level key as an array of JSON objects. */
