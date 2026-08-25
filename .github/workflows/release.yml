@@ -82,6 +82,37 @@ jobs:
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
           ./mcp-publisher validate
 
+  # CI tests Windows on every push, but `verify` above is ubuntu-only, so
+  # without this the release gate was weaker than the gate on an ordinary
+  # commit — a Windows-only regression could not have failed a publish. The
+  # mock binds real sockets and the capture sink writes real paths, so Windows
+  # is not a formality for this package.
+  #
+  # `needs: verify` rather than running alongside it: the tag guard is verify's
+  # first step, and this way it keeps gating everything without being
+  # duplicated here. Costs a couple of minutes on a release, which is not a
+  # number worth optimising against publishing something broken.
+  verify-windows:
+    name: Verify the release on Windows
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
   # Split from the registry publish on purpose. npm versions are immutable, so
   # if these were one job, any failure after the publish left the release
   # permanently unrepeatable: a re-run would die on "cannot publish over an
@@ -89,7 +120,7 @@ jobs:
   # "re-run failed jobs" retries only the half that failed.
   publish-npm:
     name: Publish to npm
-    needs: verify
+    needs: [verify, verify-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: read

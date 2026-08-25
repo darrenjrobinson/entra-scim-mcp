@@ -353,11 +353,16 @@ follows automatically.
 Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml):
 
 1. **verify** — lint, format, typecheck, tests with coverage, the version/tag
-   check, and `mcp-publisher validate` against the live registry. Nothing is
-   published until all of it passes.
-2. **publish** — `npm publish`, then waits for the new version to become
+   check, and `mcp-publisher validate` against the live registry.
+2. **verify on Windows** — the same tests again on `windows-latest`, because the
+   mock binds real sockets and the capture sink writes real paths. Without it
+   the release gate would be weaker than the gate on an ordinary commit, which
+   CI runs on Windows too.
+3. **publish** — `npm publish`, then waits for the new version to become
    visible on npm, then publishes `server.json` to the
    [MCP Registry](https://registry.modelcontextprotocol.io).
+
+Nothing is published until every one of those passes.
 
 Both publishes authenticate by GitHub OIDC, so the repository holds **no
 secrets at all** — there is no publish token to leak, rotate, or find expired
