@@ -21,19 +21,19 @@
       "environmentVariables": [
         {
           "name": "ENTRA_TENANT_ID",
-          "description": "Directory (tenant) GUID.",
-          "isRequired": true,
+          "description": "Directory (tenant) GUID. Required to authenticate against a live tenant; not needed for ENTRA_SCIM_DRY_RUN or ENTRA_SCIM_STATIC_TOKEN, which supply their own placeholder.",
+          "isRequired": false,
           "isSecret": false
         },
         {
           "name": "ENTRA_CLIENT_ID",
-          "description": "App registration (client) GUID.",
-          "isRequired": true,
+          "description": "App registration (client) GUID. Required to authenticate against a live tenant; not needed for ENTRA_SCIM_DRY_RUN or ENTRA_SCIM_STATIC_TOKEN.",
+          "isRequired": false,
           "isSecret": false
         },
         {
           "name": "ENTRA_CLIENT_SECRET",
-          "description": "Client secret value. Set exactly one of ENTRA_CLIENT_SECRET or ENTRA_CLIENT_CERT_PATH; a certificate is preferred for anything long-lived.",
+          "description": "Client secret value. For a live tenant set exactly one of ENTRA_CLIENT_SECRET or ENTRA_CLIENT_CERT_PATH; a certificate is preferred for anything long-lived.",
           "isRequired": false,
           "isSecret": true
         },
