@@ -1,4 +1,4 @@
-# @darrenjrobinson/entra-scim-mcp
+# entra-scim-mcp
 
 Model Context Protocol server for the Microsoft Entra SCIM 2.0 Provisioning API (GA April 2026). Exposes user and group lifecycle operations against `https://graph.microsoft.com/rp/scim` as MCP tools for agents like Claude.
 
@@ -30,7 +30,7 @@ The package ships a local mock of the Entra SCIM API (`entra-scim-mock-server`) 
 
 ```bash
 # shell 1 — start the mock (seeds a small demo tenant)
-npx -y --package @darrenjrobinson/entra-scim-mcp entra-scim-mock-server
+npx -y --package entra-scim-mcp entra-scim-mock-server
 ```
 
 Then point the MCP server at it:
@@ -40,7 +40,7 @@ Then point the MCP server at it:
   "mcpServers": {
     "entra-scim-mock": {
       "command": "npx",
-      "args": ["-y", "@darrenjrobinson/entra-scim-mcp"],
+      "args": ["-y", "entra-scim-mcp"],
       "env": {
         "ENTRA_SCIM_BASE_URL": "http://127.0.0.1:8990",
         "ENTRA_SCIM_STATIC_TOKEN": "dev-token"
@@ -57,7 +57,7 @@ Mock flags: `--port`, `--token`, `--seed <file.json>`, `--no-seed`, `--capture <
 The server is a stdio MCP server, designed to be launched by your MCP client (Claude Desktop, Claude Code, etc.).
 
 ```bash
-npx -y @darrenjrobinson/entra-scim-mcp
+npx -y entra-scim-mcp
 ```
 
 Required environment:
@@ -106,7 +106,7 @@ Multi-request tools (e.g. `add_group_members` beyond 20 ids) surface only their 
   "mcpServers": {
     "entra-scim": {
       "command": "npx",
-      "args": ["-y", "@darrenjrobinson/entra-scim-mcp"],
+      "args": ["-y", "entra-scim-mcp"],
       "env": {
         "ENTRA_TENANT_ID": "00000000-0000-0000-0000-000000000000",
         "ENTRA_CLIENT_ID": "11111111-1111-1111-1111-111111111111",

@@ -1,5 +1,5 @@
 {
-  "name": "@darrenjrobinson/entra-scim-mcp",
+  "name": "entra-scim-mcp",
   "version": "0.1.0",
   "description": "Model Context Protocol server for Microsoft Entra ID SCIM 2.0 inbound provisioning.",
   "mcpName": "io.github.darrenjrobinson/entra-scim-mcp",
@@ -55,6 +55,9 @@
   ],
   "author": "Darren J Robinson",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/darrenjrobinson/entra-scim-mcp.git",

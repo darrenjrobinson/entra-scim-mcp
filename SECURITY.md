@@ -1,6 +1,6 @@
 # Security Policy
 
-`@darrenjrobinson/entra-scim-mcp` provisions identity objects in real Microsoft
+`entra-scim-mcp` provisions identity objects in real Microsoft
 Entra tenants and handles Azure AD application credentials. Vulnerability
 reports are welcome and will be taken seriously.
 
@@ -16,7 +16,7 @@ the fix and the eventual disclosure in one place.
 
 What helps:
 
-- The package version (`npm ls @darrenjrobinson/entra-scim-mcp`) and Node version.
+- The package version (`npm ls entra-scim-mcp`) and Node version.
 - Whether it reproduces against the bundled mock (`entra-scim-mock-server`) or
   only against a live tenant.
 - A minimal reproduction. **Redact tenant ids, client ids, secrets, certificates
