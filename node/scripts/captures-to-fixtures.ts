@@ -134,7 +134,7 @@ function stripVolatile(value: unknown): unknown {
   return value;
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
   process.exit(1);
 });

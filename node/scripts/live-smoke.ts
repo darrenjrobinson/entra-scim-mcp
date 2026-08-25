@@ -200,7 +200,7 @@ async function main(): Promise<void> {
       record(tool, "FAIL", `transport: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
-    const out = (result.structuredContent ?? {}) as ToolOutput;
+    const out: ToolOutput = result.structuredContent ?? {};
 
     if (result.isError) {
       const parts = [
@@ -736,7 +736,9 @@ function describe(tool: string, out: ToolOutput): string {
 }
 
 function shortPath(url: unknown): string {
-  const s = String(url ?? "");
+  // Anything that is not a string has no path to shorten, and String() on an
+  // object would write "[object Object]" into the run log.
+  const s = typeof url === "string" ? url : "";
   const i = s.indexOf("/rp/scim");
   return i === -1 ? s : s.slice(i + "/rp/scim".length) || "/";
 }
@@ -845,7 +847,7 @@ Optional: ENTRA_SCIM_SMOKE_CSA_SET, ENTRA_SCIM_SMOKE_CSA_ATTR and
 ENTRA_SCIM_SMOKE_CSA_VALUE, to cover the two Custom Security Attribute tools.
 `;
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   process.stderr.write(
     `\nlive-smoke fatal: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`,
   );

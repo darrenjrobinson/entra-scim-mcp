@@ -1,0 +1,25 @@
+{
+  // The root tsconfig scopes itself to src/ because that is what `tsc` emits.
+  // Tests, scripts and config files were therefore never type-checked: vitest
+  // strips types with esbuild and never reads them. This config exists so
+  // `npm run typecheck` holds them to exactly the same strict settings, and so
+  // typescript-eslint's type-aware rules can see them.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["node"],
+    // Test files import package.json for the version assertion.
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": [
+    "src/**/*",
+    "test/**/*",
+    "scripts/**/*",
+    "vitest.config.ts",
+    "eslint.config.js"
+  ],
+  "exclude": ["node_modules", "dist", "coverage"]
+}

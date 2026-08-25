@@ -308,7 +308,7 @@ function sendResponse(
   // On a keep-alive connection those would be parsed as the head of the next
   // request; HTTP's answer is to close, and node then discards the remainder
   // instead of buffering it.
-  if (!req.readableEnded) outHeaders["Connection"] = "close";
+  if (!req.readableEnded) outHeaders.Connection = "close";
   res.writeHead(status, outHeaders);
   res.end(payload);
 }

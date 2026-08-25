@@ -25,8 +25,14 @@
     "fixtures:convert": "tsx scripts/captures-to-fixtures.ts",
     "smoke:live": "tsx scripts/live-smoke.ts",
     "dev:env": "node scripts/dev-server.mjs",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "prepack": "node -e \"const fs=require('fs');for (const f of ['README.md','LICENSE']) fs.copyFileSync('../'+f, f)\"",
     "prepublishOnly": "npm run build"
   },
@@ -55,9 +61,15 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^10.9.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
     "tsx": "^4.22.1",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.68.0",
     "vitest": "^4.1.6"
   },
   "bugs": {

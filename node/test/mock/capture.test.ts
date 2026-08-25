@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createJsonlCapture } from "../../src/mock/capture.js";
@@ -24,10 +25,22 @@ function entry(status: number): CaptureEntry {
   };
 }
 
-/** The sink is fire-and-forget; let its serialized chain drain. */
-async function settle(): Promise<void> {
-  for (let i = 0; i < 10; i++) await Promise.resolve();
-  await new Promise((resolve) => setTimeout(resolve, 20));
+/** Occurrences of a plain substring in a file — no regex, no escaping. */
+function countMatches(path: string, needle: string): number {
+  return readFileSync(path, "utf8").split(needle).length - 1;
+}
+
+/**
+ * The sink is fire-and-forget, so there is nothing to await. Poll for the
+ * outcome instead of sleeping a fixed span — a filesystem rejection under a
+ * loaded test run does not land on any schedule worth guessing at.
+ */
+async function settleUntil(done: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (done()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 describe("createJsonlCapture", () => {
@@ -36,7 +49,11 @@ describe("createJsonlCapture", () => {
     const capture = createJsonlCapture(path);
     capture(entry(200));
     capture(entry(404));
-    await settle();
+    // Two entries written means the whole chain — mkdir then both appends —
+    // has drained.
+    await settleUntil(
+      () => existsSync(path) && countMatches(path, "durationMs") === 2,
+    );
 
     const lines = (await readFile(path, "utf8")).trimEnd().split("\n");
     expect(lines).toHaveLength(2);
@@ -56,7 +73,7 @@ describe("createJsonlCapture", () => {
     try {
       const capture = createJsonlCapture(join(blocker, "session.jsonl"));
       capture(entry(200));
-      await settle();
+      await settleUntil(() => stderr.mock.calls.length > 0);
 
       const written = stderr.mock.calls.map((c) => String(c[0])).join("");
       expect(written).toMatch(/capture disabled/);
@@ -76,7 +93,9 @@ describe("createJsonlCapture", () => {
     try {
       const capture = createJsonlCapture(join(blocker, "session.jsonl"));
       for (let i = 0; i < 5; i++) capture(entry(200));
-      await settle();
+      await settleUntil(() => stderr.mock.calls.length > 0);
+      // Give any second message a chance to arrive before asserting there is none.
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       const disabledLines = stderr.mock.calls
         .map((c) => String(c[0]))
@@ -97,7 +116,7 @@ describe("createJsonlCapture", () => {
     try {
       const capture = createJsonlCapture(join(blocker, "session.jsonl"));
       expect(() => capture(entry(200))).not.toThrow();
-      await settle();
+      await settleUntil(() => stderr.mock.calls.length > 0);
     } finally {
       stderr.mockRestore();
     }

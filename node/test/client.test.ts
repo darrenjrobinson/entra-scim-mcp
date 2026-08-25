@@ -19,18 +19,33 @@ function jsonResponse(status: number, body: unknown, headers: Record<string, str
   });
 }
 
+/**
+ * ScimClient always calls fetch with a string URL. fetch's own signature is
+ * wider, so narrow here rather than String()-ing a Request into
+ * "[object Object]" and asserting against that.
+ */
+function calledUrl(call: Parameters<typeof fetch> | undefined): string {
+  const input = call?.[0];
+  if (typeof input !== "string") {
+    throw new Error(`expected fetch to be called with a string URL, got ${typeof input}`);
+  }
+  return input;
+}
+
 describe("ScimClient", () => {
   it("attaches a bearer token and SCIM accept header", async () => {
-    const fetcher = vi.fn(async (_url, init) => jsonResponse(200, { ok: true }));
+    const fetcher = vi.fn<typeof fetch>(async () => jsonResponse(200, { ok: true }));
     const client = new ScimClient({
       credential: fakeCredential("abc"),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
     });
 
     await client.request({ method: "GET", path: "/serviceproviderconfig" });
 
-    const [url, init] = fetcher.mock.calls[0]!;
-    expect(String(url)).toBe(
+    const [, init] = fetcher.mock.calls[0]!;
+    // fetch types `init` as optional; ScimClient always sends one.
+    if (!init) throw new Error("expected an init object");
+    expect(calledUrl(fetcher.mock.calls[0])).toBe(
       "https://graph.microsoft.com/rp/scim/serviceproviderconfig",
     );
     const headers = init.headers as Record<string, string>;
@@ -44,10 +59,10 @@ describe("ScimClient", () => {
   // "400 Accept header application/json is invalid" (verified against a real
   // tenant 2026-08-24), which broke deprovision_user and delete_group.
   it("sends no Accept header on DELETE", async () => {
-    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
     const client = new ScimClient({
       credential: fakeCredential("abc"),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
     });
 
     await client.request({ method: "DELETE", path: "/users/u-1" });
@@ -59,10 +74,10 @@ describe("ScimClient", () => {
   });
 
   it("sets application/scim+json on writes", async () => {
-    const fetcher = vi.fn(async () => jsonResponse(201, { id: "u-1" }));
+    const fetcher = vi.fn<typeof fetch>(async () => jsonResponse(201, { id: "u-1" }));
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
     });
 
     await client.request({
@@ -71,7 +86,7 @@ describe("ScimClient", () => {
       body: { userName: "x@y" },
     });
 
-    const init = fetcher.mock.calls[0]![1] as RequestInit;
+    const init = fetcher.mock.calls[0]![1]!;
     expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
       "application/scim+json",
     );
@@ -79,10 +94,10 @@ describe("ScimClient", () => {
   });
 
   it("returns undefined for 204 No Content", async () => {
-    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
     });
 
     const result = await client.request({ method: "DELETE", path: "/users/u-1" });
@@ -90,7 +105,7 @@ describe("ScimClient", () => {
   });
 
   it("maps SCIM error payloads to ScimError", async () => {
-    const fetcher = vi.fn(async () =>
+    const fetcher = vi.fn<typeof fetch>(async () =>
       jsonResponse(400, {
         schemas: ["urn:ietf:params:scim:api:messages:2.0:Error"],
         status: "400",
@@ -100,7 +115,7 @@ describe("ScimClient", () => {
     );
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
     });
 
     const err = await client
@@ -118,10 +133,10 @@ describe("ScimClient", () => {
       new Response("rate", { status: 429, headers: { "retry-after": "0" } }),
       jsonResponse(200, { ok: true }),
     ];
-    const fetcher = vi.fn(async () => responses.shift()!);
+    const fetcher = vi.fn<typeof fetch>(async () => responses.shift()!);
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
       retryBaseDelayMs: 1,
     });
 
@@ -134,12 +149,12 @@ describe("ScimClient", () => {
   });
 
   it("gives up after maxRetries 429s", async () => {
-    const fetcher = vi.fn(
+    const fetcher = vi.fn<typeof fetch>(
       async () => new Response("rate", { status: 429, headers: { "retry-after": "0" } }),
     );
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
       maxRetries: 2,
       retryBaseDelayMs: 1,
     });
@@ -158,10 +173,10 @@ describe("ScimClient", () => {
       new Response("rate", { status: 429, headers: { "retry-after": past } }),
       jsonResponse(200, { ok: true }),
     ];
-    const fetcher = vi.fn(async () => responses.shift()!);
+    const fetcher = vi.fn<typeof fetch>(async () => responses.shift()!);
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
       retryBaseDelayMs: 1,
     });
 
@@ -180,10 +195,10 @@ describe("ScimClient", () => {
     });
     const cancelSpy = vi.spyOn(throttled.body!, "cancel");
     const responses = [throttled, jsonResponse(200, { ok: true })];
-    const fetcher = vi.fn(async () => responses.shift()!);
+    const fetcher = vi.fn<typeof fetch>(async () => responses.shift()!);
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
       retryBaseDelayMs: 1,
     });
 
@@ -196,10 +211,10 @@ describe("ScimClient", () => {
       new Response("unavailable", { status: 503 }),
       jsonResponse(200, { ok: true }),
     ];
-    const fetcher = vi.fn(async () => responses.shift()!);
+    const fetcher = vi.fn<typeof fetch>(async () => responses.shift()!);
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
       retryBaseDelayMs: 1,
     });
 
@@ -212,10 +227,10 @@ describe("ScimClient", () => {
   });
 
   it("does not retry a 503 on POST", async () => {
-    const fetcher = vi.fn(async () => new Response("unavailable", { status: 503 }));
+    const fetcher = vi.fn<typeof fetch>(async () => new Response("unavailable", { status: 503 }));
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
       retryBaseDelayMs: 1,
     });
 
@@ -228,12 +243,12 @@ describe("ScimClient", () => {
   });
 
   it("throws when a 2xx response body is not valid JSON", async () => {
-    const fetcher = vi.fn(
+    const fetcher = vi.fn<typeof fetch>(
       async () => new Response("<html>gateway error</html>", { status: 200 }),
     );
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
     });
 
     const err = await client
@@ -246,10 +261,10 @@ describe("ScimClient", () => {
   });
 
   it("returns undefined for a 2xx with an empty body", async () => {
-    const fetcher = vi.fn(async () => new Response("", { status: 200 }));
+    const fetcher = vi.fn<typeof fetch>(async () => new Response("", { status: 200 }));
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
     });
 
     const result = await client.request({ method: "GET", path: "/users/u-1" });
@@ -257,17 +272,17 @@ describe("ScimClient", () => {
   });
 
   it("aborts a stalled request after timeoutMs and maps it to ScimError 408", async () => {
-    const fetcher = vi.fn(
-      (_url: string, init: RequestInit) =>
+    const fetcher = vi.fn<typeof fetch>(
+      (_url, init) =>
         new Promise<Response>((_resolve, reject) => {
-          init.signal!.addEventListener("abort", () =>
-            reject(init.signal!.reason),
+          init!.signal!.addEventListener("abort", () =>
+            reject(init!.signal!.reason),
           );
         }),
     );
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher,
       timeoutMs: 20,
     });
 
@@ -280,24 +295,24 @@ describe("ScimClient", () => {
   });
 
   it("passes an abort signal to every attempt", async () => {
-    const fetcher = vi.fn(async () => jsonResponse(200, { ok: true }));
+    const fetcher = vi.fn<typeof fetch>(async () => jsonResponse(200, { ok: true }));
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
     });
 
     await client.request({ method: "GET", path: "/users" });
-    const init = fetcher.mock.calls[0]![1] as RequestInit;
+    const init = fetcher.mock.calls[0]![1]!;
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("falls back to HTTP status when error body is not SCIM JSON", async () => {
-    const fetcher = vi.fn(
+    const fetcher = vi.fn<typeof fetch>(
       async () => new Response("Internal Server Error", { status: 500 }),
     );
     const client = new ScimClient({
       credential: fakeCredential(),
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
     });
 
     const err = await client

@@ -367,7 +367,7 @@ describe("validator-compat mode", () => {
       userName: "rfc.minimal.strict@contoso.local",
     });
     expect(created.status).toBe(400);
-    expect((await created.json()).detail).toContain("password");
+    expect(((await created.json()) as { detail: string }).detail).toContain("password");
   });
 
   // Three divergences the Microsoft SCIM Validator surfaced on 2026-08-24.
@@ -569,7 +569,7 @@ describe("compat-mode filter grammar", () => {
       const filter = encodeURIComponent('userName eq "a@x.com" displayName eq "A"');
       const res = await fetch(`${url}/Users?filter=${filter}`, { headers });
       expect(res.status).toBe(400);
-      expect((await res.json()).detail).toMatch(/Expected 'and'/);
+      expect(((await res.json()) as { detail: string }).detail).toMatch(/Expected 'and'/);
     } finally {
       await compat.close();
     }

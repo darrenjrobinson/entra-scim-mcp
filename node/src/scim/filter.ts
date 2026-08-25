@@ -94,7 +94,7 @@ export function validateFilterClause(
   }
   if (clause.op !== "eq" && clause.op !== "ew") {
     throw new FilterValidationError(
-      `Unsupported operator '${clause.op}'. Entra SCIM supports only 'eq' and 'ew'.`,
+      `Unsupported operator '${String(clause.op)}'. Entra SCIM supports only 'eq' and 'ew'.`,
     );
   }
   if (rejectsCustomSecurityAttributesInFilter(clause.attr)) {

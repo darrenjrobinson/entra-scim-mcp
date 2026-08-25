@@ -15,7 +15,7 @@ describe("loadAuthFromEnv (secret / certificate)", () => {
       ENTRA_TENANT_ID: TENANT,
       ENTRA_CLIENT_ID: CLIENT,
       ENTRA_CLIENT_SECRET: "s3cret",
-    } as NodeJS.ProcessEnv);
+    });
     expect(auth.mode).toBe("secret");
     expect(auth.tenantId).toBe(TENANT);
   });
@@ -27,13 +27,13 @@ describe("loadAuthFromEnv (secret / certificate)", () => {
         ENTRA_CLIENT_ID: CLIENT,
         ENTRA_CLIENT_SECRET: "s3cret",
         ENTRA_CLIENT_CERT_PATH: "/tmp/cert.pem",
-      } as NodeJS.ProcessEnv),
+      }),
     ).toThrow(ConfigError);
   });
 
   it("requires tenant and client ids", () => {
     expect(() =>
-      loadAuthFromEnv({ ENTRA_CLIENT_SECRET: "x" } as NodeJS.ProcessEnv),
+      loadAuthFromEnv({ ENTRA_CLIENT_SECRET: "x" }),
     ).toThrow(ConfigError);
   });
 });
@@ -68,7 +68,7 @@ describe("loadAuthFromEnv (static token)", () => {
         {
           ...staticEnv,
           ENTRA_CLIENT_SECRET: "s3cret",
-        } as NodeJS.ProcessEnv,
+        },
         { baseUrl: "http://127.0.0.1:8990" },
       ),
     ).toThrow(ConfigError);

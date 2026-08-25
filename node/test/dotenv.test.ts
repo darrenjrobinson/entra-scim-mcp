@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-// @ts-expect-error - plain .mjs dev-script helper, no type declarations
+// Plain .mjs dev-script helper; tsconfig.test.json sets allowJs so it resolves.
 import { loadDotEnv } from "../scripts/lib/dotenv.mjs";
 
 const dirs: string[] = [];

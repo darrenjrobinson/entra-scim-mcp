@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   process.on("SIGTERM", shutdown);
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   process.stderr.write(
     `entra-scim-mock-server fatal: ${err instanceof Error ? err.message : String(err)}\n`,
   );

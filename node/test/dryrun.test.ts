@@ -16,11 +16,11 @@ function untouchableCredential(): TokenCredential {
 }
 
 async function dryRunClient(): Promise<{ mcp: Client; fetcher: ReturnType<typeof vi.fn> }> {
-  const fetcher = vi.fn();
+  const fetcher = vi.fn<typeof fetch>();
   const credential = untouchableCredential();
   const scimClient = new ScimClient({
     credential,
-    fetcher: fetcher as unknown as typeof fetch,
+    fetcher: fetcher,
     dryRun: true,
   });
   const { server } = createServer({
@@ -38,11 +38,11 @@ async function dryRunClient(): Promise<{ mcp: Client; fetcher: ReturnType<typeof
 
 describe("ScimClient dry-run", () => {
   it("throws DryRunRequest without fetching or acquiring a token", async () => {
-    const fetcher = vi.fn();
+    const fetcher = vi.fn<typeof fetch>();
     const credential = untouchableCredential();
     const client = new ScimClient({
       credential,
-      fetcher: fetcher as unknown as typeof fetch,
+      fetcher: fetcher,
       dryRun: true,
     });
 
@@ -118,7 +118,7 @@ describe("tools in dry-run", () => {
 
 describe("loadAuthFromEnv dry-run fallback", () => {
   it("returns a placeholder credential with zero config when dryRun is set", () => {
-    const auth = loadAuthFromEnv({} as NodeJS.ProcessEnv, { dryRun: true });
+    const auth = loadAuthFromEnv({}, { dryRun: true });
     expect(auth.mode).toBe("static");
     expect(auth.tenantId).toBe("dry-run");
   });
@@ -129,7 +129,7 @@ describe("loadAuthFromEnv dry-run fallback", () => {
         ENTRA_TENANT_ID: "00000000-0000-0000-0000-000000000000",
         ENTRA_CLIENT_ID: "11111111-1111-1111-1111-111111111111",
         ENTRA_CLIENT_SECRET: "s3cret",
-      } as NodeJS.ProcessEnv,
+      },
       { dryRun: true },
     );
     expect(auth.mode).toBe("secret");

@@ -59,7 +59,9 @@ export async function loadSeedFile(path: string): Promise<SeedData> {
     parsed = JSON.parse(text);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    throw new Error(`Seed file ${path} is not valid JSON: ${detail}`);
+    throw new Error(`Seed file ${path} is not valid JSON: ${detail}`, {
+      cause: err,
+    });
   }
 
   // `typeof null` is "object", and so is an array; neither is a SeedData.

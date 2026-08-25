@@ -178,7 +178,7 @@ function assertAddressFilterShape(path: string, idx: number): void {
   // Attribute name and operator are case-insensitive per SCIM, but the value
   // literal is what the API matches — it must be exactly "work".
   const filterMatch = match[1]!.trim().match(/^type\s+eq\s+"(.*)"$/i);
-  if (!filterMatch || filterMatch[1] !== "work") {
+  if (filterMatch?.[1] !== "work") {
     throw new PatchValidationError(
       `Operation ${idx}: addresses path filter must be exactly [type eq "work"] (Entra SCIM API constraint).`,
     );

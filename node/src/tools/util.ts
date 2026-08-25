@@ -111,7 +111,7 @@ function errorResult(err: unknown): ToolResult {
     // would have sent.
     const payload: Record<string, unknown> = {
       dryRun: true,
-      request: stripSecrets(err.request) as Record<string, unknown>,
+      request: stripSecrets(err.request),
     };
     return {
       content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],

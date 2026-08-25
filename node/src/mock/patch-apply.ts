@@ -58,7 +58,7 @@ export function applyUserPatch(
  * that, or the mock reports a cleared attribute as present-but-empty.
  */
 function dropEmptyCsaValues(user: StoredUser): void {
-  const csa = user[SCHEMA_ENTRA_CSA] as Record<string, unknown> | undefined;
+  const csa = user[SCHEMA_ENTRA_CSA];
   if (!csa || typeof csa !== "object") return;
   for (const [setName, set] of Object.entries(csa)) {
     if (!set || typeof set !== "object") continue;
@@ -425,6 +425,10 @@ function elementMatches(element: unknown, conditions: FilterCondition[]): boolea
 function parseSegments(rest: string, fullPath: string): PathSegment[] {
   const segments: PathSegment[] = [];
   let remaining = rest;
+  // The \[ is redundant inside the character class, but it keeps the pair
+  // symmetric with the \] that is required, which reads better in a pattern
+  // this dense.
+  // eslint-disable-next-line no-useless-escape
   const segPattern = /^([^.\[\]]+)(\[((?:[^"\]]|"(?:[^"\\]|\\.)*")*)\])?/;
   while (remaining.length > 0) {
     const match = remaining.match(segPattern);

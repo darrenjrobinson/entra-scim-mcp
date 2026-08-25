@@ -18,7 +18,7 @@ function credential(): TokenCredential {
 async function mcpWith(
   options: { dryRun?: boolean; body?: unknown } = {},
 ): Promise<Client> {
-  const fetcher = vi.fn(
+  const fetcher = vi.fn<typeof fetch>(
     async () =>
       new Response(JSON.stringify(options.body ?? {}), {
         status: 201,
@@ -27,7 +27,7 @@ async function mcpWith(
   );
   const scimClient = new ScimClient({
     credential: credential(),
-    fetcher: fetcher as unknown as typeof fetch,
+    fetcher: fetcher,
     dryRun: options.dryRun ?? false,
   });
   const { server } = createServer({
