@@ -131,26 +131,60 @@ For production, swap the secret for a certificate:
 
 ## Tools
 
-| Tool | Purpose |
-| --- | --- |
-| `get_service_provider_config` | One-shot capability discovery. |
-| `list_resource_types` | Enumerate SCIM resource types (User, Group). |
-| `list_schemas` | Enumerate SCIM schemas and Entra extensions. |
-| `list_users` | List users; supports the API's restricted filter (eq/ew, and-only) and cursor pagination. |
-| `get_user` | Read a single user by id with optional attribute projection. |
-| `provision_user` | Create a user with the required attribute set enforced (userName, password, displayName, name.givenName, name.familyName, mailNickname). |
-| `update_user` | PATCH a user; blocks `remove` of mailNickname and enforces `[type eq "work"]` on address paths. |
-| `deprovision_user` | DELETE a user. |
-| `update_user_lifecycle` | Set lifecycle attrs (e.g. `employeeLeaveDateTime`). Requires `User-LifeCycleInfo.ReadWrite.All`. |
-| `get_user_custom_security_attributes` | Read a user's CSAs, projected by attribute set. `attributeSets` is **required** — the API rejects the bare extension URN, and CSAs never come back from a plain `get_user`. |
-| `update_user_custom_security_attributes` | PATCH CSAs on a user. |
-| `list_groups` | List groups with the API's restricted filter set. |
-| `get_group` | Read a single group (members are NOT returned — use `list_groups` with a `members.value` filter). |
-| `create_group` | POST a group. Sets `mailEnabled`, `securityEnabled`, `mailNickname`, `description` via the Entra extension. |
-| `update_group` | PATCH group attributes only (membership ops are rejected here). |
-| `add_group_members` | Add ≥1 users to a group — auto-chunks at 20 ids per PATCH (API cap), one Operation per PATCH. On a mid-sequence failure it reports `addedMemberIds` / `failedMemberIds` / `notAttemptedMemberIds` so partial writes are never silent. |
-| `remove_group_member` | Remove a single user from a group (the API allows only one removal per PATCH, with no other ops). |
-| `delete_group` | DELETE a group. |
+The **Kind** column is the tool's MCP annotations, which is what a client reads
+when it decides whether a call needs your approval: *read* is `readOnlyHint`,
+*add* is a write that only creates (`destructiveHint: false`), *overwrite* is a
+write that discards or replaces state with no undo through this API
+(`destructiveHint: true`).
+
+| Tool | Kind | Purpose |
+| --- | --- | --- |
+| `get_service_provider_config` | read | One-shot capability discovery. Static per API version — fetch once and reuse. |
+| `list_resource_types` | read | Enumerate SCIM resource types (User, Group). |
+| `list_schemas` | read | Enumerate SCIM schemas and Entra extensions, with each attribute's type, mutability and default-return. Check a patch path here before building it. |
+| `list_users` | read | List users; supports the API's restricted filter (eq/ew, and-only) and cursor pagination. Also how you resolve a `userName` to the object id every other user tool wants. |
+| `get_user` | read | Read a single user by id with optional attribute projection. Neither CSAs nor group membership are ever included. |
+| `provision_user` | add | Create a user with the required attribute set enforced (userName, password, displayName, name.givenName, name.familyName, mailNickname). |
+| `update_user` | overwrite | PATCH a user; blocks `remove` of mailNickname and enforces `[type eq "work"]` on address paths. |
+| `deprovision_user` | overwrite | DELETE a user. Soft-deleted for 30 days, restorable only via Graph; also strips every group membership. |
+| `update_user_lifecycle` | overwrite | Set lifecycle attrs (e.g. `employeeLeaveDateTime`) — which Lifecycle Workflows can fire off. Requires `User-LifeCycleInfo.ReadWrite.All`. |
+| `get_user_custom_security_attributes` | read | Read a user's CSAs, projected by attribute set. `attributeSets` is **required** — the API rejects the bare extension URN, and CSAs never come back from a plain `get_user`. |
+| `update_user_custom_security_attributes` | overwrite | PATCH CSAs on a user. `remove`, or `replace` with an empty array, deletes an assignment. |
+| `list_groups` | read | List groups with the API's restricted filter set. A `members.value` filter is the only way to read membership. |
+| `get_group` | read | Read a single group (members are NOT returned — use `list_groups` with a `members.value` filter). |
+| `create_group` | add | POST a group. Sets `mailEnabled`, `securityEnabled`, `mailNickname`, `description` via the Entra extension. `displayName` is not unique. |
+| `update_group` | overwrite | PATCH group attributes only (membership ops are rejected here; type flags are fixed at creation). |
+| `add_group_members` | add | Add ≥1 users to a group — auto-chunks at 20 ids per PATCH (API cap), one Operation per PATCH. Idempotent. On a mid-sequence failure it reports `addedMemberIds` / `failedMemberIds` / `notAttemptedMemberIds` so partial writes are never silent. |
+| `remove_group_member` | overwrite | Remove a single user from a group (the API allows only one removal per PATCH, with no other ops). A 404 here usually means *not a member*, not *no such group*. |
+| `delete_group` | overwrite | DELETE a group. Unified groups are recoverable for 30 days via Graph; security groups are not. |
+
+### What the agent is told, and where
+
+A model never reads this file, so everything it needs has to travel in the
+protocol. Three places carry it, and the split is deliberate:
+
+- **Server instructions**, sent once in the handshake, hold what is true of
+  every tool: ids rather than names, membership being readable in one direction
+  only, CSAs being invisible to ordinary reads, the narrow filter grammar, and
+  that every call is a billed Graph request. Repeating that in eighteen
+  descriptions would cost more context than it bought.
+- **Tool descriptions** hold what is specific to one tool, including the
+  failure modes worth pre-empting — the 404 that names the group when the user
+  simply is not a member, the mailNickname that cannot be removed once set, the
+  second `provision_user` that conflicts rather than merges.
+- **Input descriptions** hold per-argument syntax. The three PATCH tools each
+  carry their own `path` example, because path syntax is the one thing here
+  that cannot be guessed: the API accepts a narrow subset of RFC 7644, and the
+  subset differs between ordinary attributes and CSAs.
+
+With `ENTRA_SCIM_DRY_RUN=1` the instructions gain a paragraph saying so, since
+a dry-run result is shaped like a success and would otherwise be reported as a
+change that landed.
+
+`test/tool-metadata.test.ts` enforces all of this: every tool carries
+annotations, read-only and write sets are pinned by name, every input has a
+description, and the PATCH tools must show a URN. A new tool that defaults to
+looking read-only fails the suite.
 
 ## What this server enforces for you
 

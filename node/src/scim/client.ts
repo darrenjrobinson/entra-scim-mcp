@@ -32,7 +32,12 @@ export class ScimClient {
   private readonly maxRetries: number;
   private readonly retryBaseDelayMs: number;
   private readonly timeoutMs: number;
-  private readonly dryRun: boolean;
+  /**
+   * Public so the server can say so in its MCP instructions. A client that
+   * silently answers every write with a would-have-sent request is the one
+   * fact a model must know up front, or it reports changes it never made.
+   */
+  readonly dryRun: boolean;
 
   constructor(options: ScimClientOptions) {
     this.credential = options.credential;
