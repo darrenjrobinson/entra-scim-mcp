@@ -1,0 +1,123 @@
+name: Release
+
+# Tag-driven. `npm version <patch|minor|major>` in node/ writes the version into
+# package.json, package-lock.json and server.json (the `version` lifecycle
+# script), commits and tags it; pushing that tag runs this.
+#
+#   cd node && npm version minor && git push --follow-tags
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: node
+
+jobs:
+  verify:
+    name: Verify the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      - run: npm ci
+
+      # Everything CI runs, again. A tag is the last place to find out that
+      # master was green and the tagged commit is not.
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run test:coverage
+
+      # The tag, package.json, package-lock.json and server.json must all name
+      # the same version. Getting this wrong publishes an npm package under one
+      # version and a registry entry pointing at another.
+      - name: Check the version is consistent with the tag
+        run: npm run check:version -- "${GITHUB_REF_NAME}"
+
+      # The registry validates server.json server-side, and rejects things a
+      # JSON schema alone would not — description has a 100-character limit,
+      # which this repo's first draft exceeded. Far better to find that here
+      # than after the npm publish below has already gone out and cannot be
+      # taken back.
+      - name: Validate server.json against the MCP Registry
+        working-directory: .
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher validate
+
+  publish:
+    name: Publish to npm and the MCP Registry
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Both the npm provenance attestation and the MCP Registry login are
+      # OIDC-based; neither works without this.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+
+      # --access public because the package is scoped and scoped packages
+      # default to restricted. --provenance ties the tarball to this workflow
+      # run and this commit, which npm shows on the package page.
+      - name: Publish to npm
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # The MCP Registry verifies ownership by fetching package.json from npm
+      # and comparing its `mcpName` to the server name. A publish is not
+      # instantly visible, so give it a moment rather than failing the run on a
+      # race that resolves itself in seconds.
+      - name: Wait for npm to serve the new version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          for attempt in $(seq 1 30); do
+            if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+              echo "$NAME@$VERSION is live on npm"
+              exit 0
+            fi
+            echo "attempt $attempt: not visible yet, waiting 10s"
+            sleep 10
+          done
+          echo "::error::$NAME@$VERSION never became visible on npm"
+          exit 1
+
+      - name: Install mcp-publisher
+        working-directory: .
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          ./mcp-publisher --version || true
+
+      # OIDC proves this workflow runs in darrenjrobinson/entra-scim-mcp, which
+      # is what authorises the io.github.darrenjrobinson/* namespace. No secret.
+      - name: Authenticate to the MCP Registry
+        working-directory: .
+        run: ./mcp-publisher login github-oidc
+
+      # server.json is at the repo root and already carries the right version —
+      # the `version` lifecycle script wrote it, and `verify` above checked it.
+      - name: Publish to the MCP Registry
+        working-directory: .
+        run: ./mcp-publisher publish

@@ -305,6 +305,54 @@ runs on every push and pull request, alongside `npm audit --audit-level=high`.
 
 The server has no test dependency on a real tenant. Unit tests cover the filter, patch, query, and client layers; integration tests boot the in-process mock server and drive **every MCP tool end-to-end** over real HTTP (`node/test/integration/`). Captured [SCIM Validator](node/docs/scim-validator.md) sessions convert into replay fixtures with `npm run fixtures:convert`. For the one thing none of that can prove — that the live API accepts these payloads — see [Testing against a real tenant](#testing-against-a-real-tenant).
 
+## Releasing
+
+The version lives in four places — `node/package.json`, `node/package-lock.json`
+(twice), and `server.json` (twice, once for the registry record and once for the
+npm package it points at). One command writes all of them:
+
+```bash
+cd node
+npm version minor          # or patch / major
+git push --follow-tags
+```
+
+`npm version` bumps package.json and the lockfile, then the `version` lifecycle
+script propagates it to `server.json` and stages the result, so the commit and
+tag it creates are already consistent. `npm run check:version` verifies that,
+and CI runs it on every push; the release workflow runs it again against the tag
+itself. The version the server reports in its MCP handshake is read from
+package.json at runtime, so it follows automatically.
+
+Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml):
+
+1. **verify** — lint, format, typecheck, tests with coverage, the version/tag
+   check, and `mcp-publisher validate` against the live registry. Nothing is
+   published until all of it passes.
+2. **publish** — `npm publish --access public --provenance`, then waits for the
+   new version to become visible on npm, then publishes `server.json` to the
+   [MCP Registry](https://registry.modelcontextprotocol.io).
+
+Required repository setup:
+
+| What | Where | Needed for |
+| --- | --- | --- |
+| `NPM_TOKEN` secret | Settings → Secrets → Actions | Publishing to npm. An automation token with publish rights. |
+| Nothing | — | The MCP Registry. It authenticates by GitHub OIDC, which is why the workflow requests `id-token: write`. |
+
+The MCP Registry proves you own the npm package by fetching `package.json` and
+comparing its `mcpName` to the `name` in `server.json` — both are
+`io.github.darrenjrobinson/entra-scim-mcp`, and `check:version` asserts they
+still match.
+
+The first npm publish has to be done by hand, because the token has to exist
+before a workflow can use it:
+
+```bash
+cd node
+npm publish --access public
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

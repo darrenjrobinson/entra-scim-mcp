@@ -45,6 +45,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # The version lives in package.json, package-lock.json and server.json.
+      # Catch drift on the commit that introduces it, not at release time.
+      - name: Version consistency
+        run: npm run check:version
+
   test:
     name: Test (node ${{ matrix.node }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}

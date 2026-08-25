@@ -2,6 +2,7 @@
   "name": "@darrenjrobinson/entra-scim-mcp",
   "version": "0.1.0",
   "description": "Model Context Protocol server for Microsoft Entra ID SCIM 2.0 inbound provisioning.",
+  "mcpName": "io.github.darrenjrobinson/entra-scim-mcp",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -30,12 +31,15 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "check:version": "node scripts/check-version-sync.mjs",
+    "version:set": "node scripts/set-version.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "prepare": "npm run build",
     "prepack": "node -e \"const fs=require('fs');for (const f of ['README.md','LICENSE']) fs.copyFileSync('../'+f, f)\"",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "version": "node scripts/set-version.mjs && git add ../server.json package-lock.json"
   },
   "keywords": [
     "mcp",
