@@ -142,10 +142,20 @@ describe("createJsonlCapture", () => {
       // Clear the blockage; the sink was never disabled, so it should resume.
       await rm(path, { recursive: true, force: true });
       capture(entry(200));
-      await settleUntil(() => countMatches(path, "durationMs") === 1);
 
-      const written = stderr.mock.calls.map((c) => String(c[0])).join("");
-      expect(written).toContain("capture writes recovered");
+      // Wait for the message rather than the file, because the message is what
+      // is asserted below. The sink emits it in the continuation that runs
+      // after `await appendFile` resolves, so the bytes are on disk before the
+      // line is written — and libuv runs the timers phase before the I/O
+      // callbacks phase, so this poll's setTimeout can read a complete file
+      // while that continuation is still queued. Gating on the file let the
+      // assertion run a beat early and the message arrive after mockRestore,
+      // on the real stderr: a Windows CI failure whose supposedly missing line
+      // was sitting in the job log all along.
+      const written = () => stderr.mock.calls.map((c) => String(c[0])).join("");
+      await settleUntil(() => written().includes("capture writes recovered"));
+
+      expect(written()).toContain("capture writes recovered");
       expect(countMatches(path, "durationMs")).toBe(1);
     } finally {
       stderr.mockRestore();
