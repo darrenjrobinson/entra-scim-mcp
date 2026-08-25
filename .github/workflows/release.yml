@@ -5,6 +5,10 @@ name: Release
 # script), commits and tags it; pushing that tag runs this.
 #
 #   cd node && npm version minor && git push --follow-tags
+#
+# workflow_dispatch exists to re-run a release that failed partway, and GitHub
+# lets a manual run target a tag. It cannot be used to publish an untagged
+# branch: the first step of `verify` refuses any ref that is not a v* tag.
 on:
   push:
     tags: ["v*"]
@@ -22,6 +26,25 @@ jobs:
     name: Verify the release
     runs-on: ubuntu-latest
     steps:
+      # Must come first, and must gate everything: a workflow_dispatch can name
+      # any ref, and check-version-sync only compares against refs beginning
+      # with "v" — so a manual run from a branch would otherwise sail past the
+      # version check and publish whatever package.json happened to say.
+      - name: Refuse anything that is not a version tag
+        working-directory: .
+        run: |
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "::error::Release runs only from a tag. Got ${GITHUB_REF_TYPE} '${GITHUB_REF_NAME}'."
+            exit 1
+          fi
+          case "${GITHUB_REF_NAME}" in
+            v*) echo "Releasing from tag ${GITHUB_REF_NAME}" ;;
+            *)
+              echo "::error::'${GITHUB_REF_NAME}' is not a v* version tag."
+              exit 1
+              ;;
+          esac
+
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
@@ -45,26 +68,28 @@ jobs:
       - name: Check the version is consistent with the tag
         run: npm run check:version -- "${GITHUB_REF_NAME}"
 
-      # The registry validates server.json server-side, and rejects things a
+      # The registry validates server.json server-side and rejects things a
       # JSON schema alone would not — description has a 100-character limit,
-      # which this repo's first draft exceeded. Far better to find that here
-      # than after the npm publish below has already gone out and cannot be
-      # taken back.
+      # which this repo's first draft exceeded. Far better here than after the
+      # npm publish below, which cannot be taken back.
       - name: Validate server.json against the MCP Registry
         working-directory: .
         run: |
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
           ./mcp-publisher validate
 
-  publish:
-    name: Publish to npm and the MCP Registry
+  # Split from the registry publish on purpose. npm versions are immutable, so
+  # if these were one job, any failure after the publish left the release
+  # permanently unrepeatable: a re-run would die on "cannot publish over an
+  # existing version" and never reach the registry. Two jobs means GitHub's
+  # "re-run failed jobs" retries only the half that failed.
+  publish-npm:
+    name: Publish to npm
     needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Both the npm provenance attestation and the MCP Registry login are
-      # OIDC-based; neither works without this.
-      id-token: write
+      id-token: write # provenance attestation
     steps:
       - uses: actions/checkout@v5
 
@@ -77,24 +102,47 @@ jobs:
 
       - run: npm ci
 
-      # --access public because the package is scoped and scoped packages
-      # default to restricted. --provenance ties the tarball to this workflow
-      # run and this commit, which npm shows on the package page.
+      # Idempotent: skipped only when this exact version is already on npm, so
+      # re-running after a downstream failure is a no-op here instead of a hard
+      # error. `npm view` is checked for the exact version rather than by exit
+      # code, which is 0 with empty output when the package exists but the
+      # version does not.
       - name: Publish to npm
-        run: npm publish --access public --provenance
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          PUBLISHED=$(npm view "$NAME@$VERSION" version 2>/dev/null || true)
+          if [ "$PUBLISHED" = "$VERSION" ]; then
+            echo "::notice::$NAME@$VERSION is already published; skipping so a retry can reach the registry."
+            exit 0
+          fi
+          npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      # The MCP Registry verifies ownership by fetching package.json from npm
-      # and comparing its `mcpName` to the server name. A publish is not
-      # instantly visible, so give it a moment rather than failing the run on a
-      # race that resolves itself in seconds.
+  publish-registry:
+    name: Publish to the MCP Registry
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # GitHub OIDC login; no secret involved
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # The registry verifies ownership by fetching package.json from npm and
+      # comparing its `mcpName` to the server name, so the version has to be
+      # served before this runs. A fresh publish is not instantly visible.
       - name: Wait for npm to serve the new version
         run: |
-          VERSION=$(node -p "require('./package.json').version")
           NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
           for attempt in $(seq 1 30); do
-            if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then
+            if [ "$(npm view "$NAME@$VERSION" version 2>/dev/null || true)" = "$VERSION" ]; then
               echo "$NAME@$VERSION is live on npm"
               exit 0
             fi
@@ -108,16 +156,13 @@ jobs:
         working-directory: .
         run: |
           curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
-          ./mcp-publisher --version || true
 
       # OIDC proves this workflow runs in darrenjrobinson/entra-scim-mcp, which
-      # is what authorises the io.github.darrenjrobinson/* namespace. No secret.
+      # is what authorises the io.github.darrenjrobinson/* namespace.
       - name: Authenticate to the MCP Registry
         working-directory: .
         run: ./mcp-publisher login github-oidc
 
-      # server.json is at the repo root and already carries the right version —
-      # the `version` lifecycle script wrote it, and `verify` above checked it.
-      - name: Publish to the MCP Registry
+      - name: Publish server.json
         working-directory: .
         run: ./mcp-publisher publish
