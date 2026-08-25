@@ -7,7 +7,8 @@ name: Release
 # by hand, then push the tag to run this:
 #
 #   cd node && npm version minor && cd ..
-#   git commit -m "v0.2.0" && git tag v0.2.0 && git push --follow-tags
+#   git commit -m "v0.2.0" && git tag -a v0.2.0 -m v0.2.0
+#   git push --follow-tags        # -a is required: this pushes annotated only
 #
 # workflow_dispatch exists to re-run a release that failed partway, and GitHub
 # lets a manual run target a tag. It cannot be used to publish an untagged

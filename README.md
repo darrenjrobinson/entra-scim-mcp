@@ -327,9 +327,13 @@ cd node
 npm version minor          # or patch / major — writes all four, stages three
 cd ..
 git commit -m "v0.2.0"     # the version npm just printed
-git tag v0.2.0
+git tag -a v0.2.0 -m v0.2.0
 git push --follow-tags
 ```
+
+The `-a` matters: `--follow-tags` pushes **annotated** tags only, so a
+lightweight `git tag v0.2.0` stays on your machine and the push reports success
+having sent no tag at all — the release simply never runs.
 
 `npm version` bumps package.json and the lockfile, then the `version` lifecycle
 script propagates it to `server.json` and stages the result. It does **not**
