@@ -89,7 +89,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # provenance attestation
+      # npm trusted publishing: the OIDC token IS the credential, so there is
+      # no NPM_TOKEN to hold or rotate. npm authorises the publish by matching
+      # the token's repo and workflow filename against the trusted publisher
+      # configured on the package, and mints provenance from the same token.
+      id-token: write
     steps:
       - uses: actions/checkout@v5
 
@@ -100,6 +104,13 @@ jobs:
           cache-dependency-path: node/package-lock.json
           registry-url: https://registry.npmjs.org
 
+      # Trusted publishing requires npm >= 11.5.1. Node 22 bundles 10.9.x,
+      # which has no OIDC support at all: it would ignore the token, look for
+      # an _authToken it will not find, and fail with a 404 on the PUT. Placed
+      # before `npm ci` so the install runs on npm 11 as well.
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
       - run: npm ci
 
       # Idempotent: skipped only when this exact version is already on npm, so
@@ -107,6 +118,10 @@ jobs:
       # error. `npm view` is checked for the exact version rather than by exit
       # code, which is 0 with empty output when the package exists but the
       # version does not.
+      #
+      # No --access and no --provenance. The name is unscoped so public is the
+      # default (publishConfig pins it regardless), and trusted publishing
+      # attaches the provenance attestation on its own.
       - name: Publish to npm
         run: |
           NAME=$(node -p "require('./package.json').name")
@@ -116,9 +131,7 @@ jobs:
             echo "::notice::$NAME@$VERSION is already published; skipping so a retry can reach the registry."
             exit 0
           fi
-          npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          npm publish
 
   publish-registry:
     name: Publish to the MCP Registry

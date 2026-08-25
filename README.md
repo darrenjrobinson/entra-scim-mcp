@@ -340,29 +340,29 @@ Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/rele
 1. **verify** — lint, format, typecheck, tests with coverage, the version/tag
    check, and `mcp-publisher validate` against the live registry. Nothing is
    published until all of it passes.
-2. **publish** — `npm publish --access public --provenance`, then waits for the
-   new version to become visible on npm, then publishes `server.json` to the
+2. **publish** — `npm publish`, then waits for the new version to become
+   visible on npm, then publishes `server.json` to the
    [MCP Registry](https://registry.modelcontextprotocol.io).
 
-Required repository setup:
+Both publishes authenticate by GitHub OIDC, so the repository holds **no
+secrets at all** — there is no publish token to leak, rotate, or find expired
+at the worst moment.
 
-| What | Where | Needed for |
-| --- | --- | --- |
-| `NPM_TOKEN` secret | Settings → Secrets → Actions | Publishing to npm. An automation token with publish rights. |
-| Nothing | — | The MCP Registry. It authenticates by GitHub OIDC, which is why the workflow requests `id-token: write`. |
+| Registry | How it authorises this workflow |
+| --- | --- |
+| npm | A [trusted publisher](https://docs.npmjs.com/trusted-publishers) on the package, set to this repo and workflow file `release.yml` with an empty environment. npm matches the OIDC claims against it, and attaches a provenance attestation from the same token. Needs npm >= 11.5.1, which is why the job upgrades npm before publishing. |
+| MCP Registry | `mcp-publisher login github-oidc`. Running in `darrenjrobinson/entra-scim-mcp` is what authorises the `io.github.darrenjrobinson/*` namespace. |
+
+Both are the reason the publish jobs request `id-token: write`.
 
 The MCP Registry proves you own the npm package by fetching `package.json` and
 comparing its `mcpName` to the `name` in `server.json` — both are
 `io.github.darrenjrobinson/entra-scim-mcp`, and `check:version` asserts they
 still match.
 
-The first npm publish has to be done by hand, because the token has to exist
-before a workflow can use it:
-
-```bash
-cd node
-npm publish --access public
-```
+Changing the workflow's filename, or adding an `environment:` to the publish
+job, breaks the npm trusted publisher until the configuration on npmjs.com is
+updated to match — the OIDC claims are compared exactly.
 
 ## License
 
