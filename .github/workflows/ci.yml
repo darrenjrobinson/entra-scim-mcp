@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the in-flight run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: node
+
+jobs:
+  quality:
+    name: Lint, format, types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      # `prepare` builds as part of install, so a compile error fails here.
+      - run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier
+        run: npm run format:check
+
+      # Holds test/ and scripts/ to the same strict settings as src/, which
+      # vitest's transform never checks.
+      - name: Typecheck
+        run: npm run typecheck
+
+  test:
+    name: Test (node ${{ matrix.node }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        node: [20, 22, 24]
+        include:
+          # Developed on Windows; the mock binds real sockets and the capture
+          # sink writes real paths, so both deserve a run there.
+          - os: windows-latest
+            node: 22
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      - run: npm ci
+
+      # The tree was carrying nine advisories before this branch. Fail on high
+      # and above so it cannot drift back without someone deciding to let it.
+      - name: npm audit
+        run: npm audit --audit-level=high
+
+  pack:
+    name: Verify the published tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      - run: npm ci
+
+      # `files` plus .npmignore decide what ships. This is the cheapest place
+      # to notice that src/ leaked in, or that dist/ did not.
+      - name: npm pack
+        run: npm pack --dry-run
+
+      - name: Assert the tarball has what it needs and nothing it should not
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e "
+            const files = JSON.parse(require('fs').readFileSync('pack.json','utf8'))[0].files.map(f => f.path);
+            const required = ['dist/index.js', 'dist/mock/cli.js', 'package.json', 'README.md', 'LICENSE'];
+            const missing = required.filter(f => !files.includes(f));
+            if (missing.length) { console.error('missing from tarball:', missing); process.exit(1); }
+            const leaked = files.filter(f => f.startsWith('src/') || f.startsWith('test/') || f.endsWith('.env'));
+            if (leaked.length) { console.error('should not be published:', leaked); process.exit(1); }
+            console.log('tarball contents OK:', files.length, 'files');
+          "
