@@ -154,7 +154,7 @@ write that discards or replaces state with no undo through this API
 | `get_group` | read | Read a single group (members are NOT returned — use `list_groups` with a `members.value` filter). |
 | `create_group` | add | POST a group. Sets `mailEnabled`, `securityEnabled`, `mailNickname`, `description` via the Entra extension. `displayName` is not unique. |
 | `update_group` | overwrite | PATCH group attributes only (membership ops are rejected here; type flags are fixed at creation). |
-| `add_group_members` | add | Add ≥1 users to a group — auto-chunks at 20 ids per PATCH (API cap), one Operation per PATCH. Idempotent. On a mid-sequence failure it reports `addedMemberIds` / `failedMemberIds` / `notAttemptedMemberIds` so partial writes are never silent. |
+| `add_group_members` | add | Add ≥1 users to a group — auto-chunks at 20 ids per PATCH (API cap), one Operation per PATCH. Idempotent. Each PATCH is atomic per RFC 7644, but a multi-chunk sequence is not: if a later chunk fails, **this server** (not the API) raises `AddGroupMembersPartialFailure` naming `addedMemberIds` / `failedMemberIds` / `notAttemptedMemberIds`, so a partial write is never silent. |
 | `remove_group_member` | overwrite | Remove a single user from a group (the API allows only one removal per PATCH, with no other ops). A 404 here usually means *not a member*, not *no such group*. |
 | `delete_group` | overwrite | DELETE a group. Unified groups are recoverable for 30 days via Graph; security groups are not. |
 
