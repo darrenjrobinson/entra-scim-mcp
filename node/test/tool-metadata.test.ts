@@ -157,6 +157,22 @@ describe("tool descriptions", () => {
     }
   });
 
+  it("list at least one parameter for every tool that takes any", async () => {
+    // Since SDK 1.28 a plain JSON Schema handed to registerTool is rejected at
+    // registration; before that it registered the tool with empty properties
+    // and dropped every parameter without a word. The loop above passes on an
+    // empty object, so this is the assertion that would catch that on the wire.
+    const noInputTools = ["get_service_provider_config"];
+    for (const tool of await listTools()) {
+      const count = Object.keys(tool.inputSchema.properties ?? {}).length;
+      if (noInputTools.includes(tool.name)) {
+        expect(count, `${tool.name} should take no parameters`).toBe(0);
+      } else {
+        expect(count, `${tool.name} lists no parameters`).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it("give the patch tools a path example, which is the hard part to guess", async () => {
     const tools = await listTools();
     for (const name of [

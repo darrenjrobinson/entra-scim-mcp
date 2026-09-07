@@ -1,5 +1,9 @@
 # entra-scim-mcp
 
+[![npm version](https://img.shields.io/npm/v/entra-scim-mcp)](https://www.npmjs.com/package/entra-scim-mcp)
+[![npm downloads](https://img.shields.io/npm/dt/entra-scim-mcp)](https://www.npmjs.com/package/entra-scim-mcp)
+[![license](https://img.shields.io/npm/l/entra-scim-mcp?color=blue)](LICENSE)
+
 Model Context Protocol server for the Microsoft Entra SCIM 2.0 Provisioning API (GA April 2026). Exposes user and group lifecycle operations against `https://graph.microsoft.com/rp/scim` as MCP tools for agents like Claude.
 
 ## What you can do with it
@@ -360,14 +364,18 @@ npm package it points at). One command writes all of them:
 cd node
 npm version minor          # or patch / major — writes all four, stages three
 cd ..
-git commit -m "v0.2.0"     # the version npm just printed
-git tag -a v0.2.0 -m v0.2.0
+VERSION=$(node -p "require('./node/package.json').version")
+git commit -m "v$VERSION"
+git tag -a "v$VERSION" -m "v$VERSION"
 git push --follow-tags
 ```
 
+`VERSION` is read back from package.json rather than typed, so the commit and
+tag can never name a version other than the one npm just wrote.
+
 The `-a` matters: `--follow-tags` pushes **annotated** tags only, so a
-lightweight `git tag v0.2.0` stays on your machine and the push reports success
-having sent no tag at all — the release simply never runs.
+lightweight `git tag "v$VERSION"` stays on your machine and the push reports
+success having sent no tag at all — the release simply never runs.
 
 `npm version` bumps package.json and the lockfile, then the `version` lifecycle
 script propagates it to `server.json` and stages the result. It does **not**
