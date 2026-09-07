@@ -1,5 +1,9 @@
 # entra-scim-mcp
 
+[![npm version](https://img.shields.io/npm/v/entra-scim-mcp)](https://www.npmjs.com/package/entra-scim-mcp)
+[![npm downloads](https://img.shields.io/npm/dt/entra-scim-mcp)](https://www.npmjs.com/package/entra-scim-mcp)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Model Context Protocol server for the Microsoft Entra SCIM 2.0 Provisioning API (GA April 2026). Exposes user and group lifecycle operations against `https://graph.microsoft.com/rp/scim` as MCP tools for agents like Claude.
 
 ## What you can do with it
