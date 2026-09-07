@@ -50,7 +50,7 @@ jobs:
               ;;
           esac
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v5
         with:
@@ -98,7 +98,7 @@ jobs:
     needs: verify
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v5
         with:
@@ -131,7 +131,7 @@ jobs:
       # configured on the package, and mints provenance from the same token.
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v5
         with:
@@ -177,7 +177,7 @@ jobs:
       contents: read
       id-token: write # GitHub OIDC login; no secret involved
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v5
         with:
