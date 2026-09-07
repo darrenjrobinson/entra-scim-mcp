@@ -1,0 +1,21 @@
+# Version-update PRs only. Security alerts are a repository setting
+# (Settings > Code security > Dependabot alerts) and are already enabled.
+#
+# The npm package lives in node/, not at the repo root, so the npm directory
+# is /node. GitHub Actions workflows are at the root as usual.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/node"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
