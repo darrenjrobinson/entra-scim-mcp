@@ -10,6 +10,16 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # TypeScript 7 cannot be installed here: typescript-eslint pins a peer of
+    # typescript ">=4.8.4 <6.1.0", still true in 8.70.0, its newest release. An
+    # offered bump to 7.x fails `npm ci` with ERESOLVE, which kills every CI
+    # job before it runs and blocks the six other updates grouped with it.
+    # Scoped to >=7 rather than all majors so a TypeScript 6 bump, which the
+    # linter does accept, still comes through. Drop this once typescript-eslint
+    # widens the range.
+    ignore:
+      - dependency-name: typescript
+        versions: [">=7"]
     groups:
       dev-dependencies:
         dependency-type: development
