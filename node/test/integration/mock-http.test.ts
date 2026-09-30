@@ -124,6 +124,23 @@ describe("discovery", () => {
     expect(body.Resources[1].schemaExtensions[0].required).toBe(true);
   });
 
+  it("advertises the filter-only ownership attributes as returned: never", async () => {
+    const find = async (urn: string, name: string) => {
+      const schema = (await (await call("GET", `/schemas/${urn}`)).json()) as {
+        attributes: { name: string; returned: string; multiValued: boolean }[];
+      };
+      return schema.attributes.find((a) => a.name === name);
+    };
+    const owned = await find(SCHEMA_ENTRA_USER, "ownedGroups");
+    const owners = await find(
+      "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:Group",
+      "owners",
+    );
+    for (const a of [owned, owners]) {
+      expect(a).toMatchObject({ returned: "never", multiValued: true });
+    }
+  });
+
   it("serves all six schemas and individual lookups", async () => {
     const list = (await (await call("GET", "/schemas")).json()) as Record<string, any>;
     expect(list.totalResults).toBe(6);
@@ -367,6 +384,18 @@ describe("page size ceilings", () => {
           "/users?count=999&attributes=id,urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager",
         ),
       ).toBe(100);
+      // The whole enterprise extension carries manager too, in either path form.
+      const enterprise = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
+      expect(await size(`/users?count=999&attributes=id,${enterprise}`)).toBe(100);
+      expect(await size(`/users?count=999&attributes=id,${enterprise}.manager`)).toBe(
+        100,
+      );
+      expect(
+        await size(`/users?count=999&attributes=id,${enterprise}:manager.value`),
+      ).toBe(100);
+      expect(await size(`/users?count=999&attributes=id,${enterprise}:department`)).toBe(
+        999,
+      );
       expect(await size("/groups?count=1000")).toBe(1000);
     } finally {
       await bigMock.close();

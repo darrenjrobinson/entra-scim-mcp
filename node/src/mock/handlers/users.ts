@@ -13,6 +13,7 @@ import {
   DEFAULT_PAGE_SIZE,
   listResponseBody,
   paginate,
+  parseAttrPath,
   projectResource,
   type PageParams,
 } from "./shared.js";
@@ -232,7 +233,6 @@ function sanitizeUser(user: StoredUser): Record<string, unknown> {
 }
 
 const USER_MAX_PAGE_SIZE = 999;
-const MANAGER_ATTR = `${SCHEMA_ENTERPRISE_USER}:manager`.toLowerCase();
 
 /**
  * Users page at up to 999, but only under an `attributes` projection that
@@ -244,13 +244,24 @@ function pageParams(query: URLSearchParams): PageParams {
   const largePages =
     attributes !== null &&
     attributes.length > 0 &&
-    !attributes.split(",").some((a) => a.trim().toLowerCase() === MANAGER_ATTR);
+    !attributes.split(",").some(projectsManager);
   return {
     count: query.get("count"),
     cursor: query.get("cursor"),
     startIndex: query.get("startIndex"),
     maxPageSize: largePages ? USER_MAX_PAGE_SIZE : DEFAULT_PAGE_SIZE,
   };
+}
+
+/**
+ * Does this projection entry return manager? The leaf (`...:manager`, and
+ * sub-paths such as `...:manager.value`) does, and so does the bare
+ * enterprise URN, which the projector treats as the whole extension.
+ */
+function projectsManager(entry: string): boolean {
+  const path = parseAttrPath(entry);
+  if (path.urn !== SCHEMA_ENTERPRISE_USER) return false;
+  return path.segments.length === 0 || path.segments[0]!.toLowerCase() === "manager";
 }
 
 function nonEmpty(value: unknown): boolean {

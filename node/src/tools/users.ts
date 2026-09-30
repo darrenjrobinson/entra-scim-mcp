@@ -236,7 +236,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
           .min(1)
           .optional()
           .describe(
-            'Mail alias, local part only (no @domain). Omit it to have Entra derive it from userName: everything before the first "@", or the whole userName if there is none ("abc123@contoso.com" gives "abc123"). It must be unique in the tenant, so a derived alias that is already taken fails the create. Once set it cannot be removed by update_user.',
+            'Mail alias, local part only (no @domain). Omit it to have Entra derive it from userName: everything before the first "@", or the whole userName if there is none ("abc123@contoso.com" gives "abc123"). Two users can end up with the same derived alias (a@contoso.com and a@fabrikam.com both give "a"); pass mailNickname explicitly if that matters. Once set it cannot be removed by update_user.',
           ),
         active: z
           .boolean()

@@ -119,7 +119,7 @@ interface AttrPath {
   segments: string[];
 }
 
-function parseAttrPath(raw: string): AttrPath {
+export function parseAttrPath(raw: string): AttrPath {
   const trimmed = raw.trim();
   const lower = trimmed.toLowerCase();
   for (const urn of EXTENSION_URNS) {

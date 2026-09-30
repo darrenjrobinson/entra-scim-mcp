@@ -163,6 +163,15 @@ const ENTRA_GROUP_SCHEMA: ScimSchema = {
     attr("securityEnabled", "boolean"),
     attr("groupTypes", "string", { multiValued: true }),
     attr("securityIdentifier", "string", { mutability: "readOnly" }),
+    // Filter target only (owners.value eq "<userId>"); never returned.
+    attr("owners", "complex", {
+      multiValued: true,
+      mutability: "readOnly",
+      returned: "never",
+      subAttributes: [
+        attr("value", "string", { mutability: "readOnly", returned: "never" }),
+      ],
+    }),
   ],
   meta: { resourceType: "Schema", location: `/schemas/${SCHEMA_ENTRA_GROUP}` },
 };
