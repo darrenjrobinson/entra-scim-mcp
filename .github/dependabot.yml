@@ -20,6 +20,11 @@ updates:
     ignore:
       - dependency-name: typescript
         versions: [">=7"]
+      # @types/node tracks the lowest Node the package supports (engines
+      # >=22), not the newest. A higher major would type-check calls to APIs
+      # that do not exist on 22. Raise it by hand when the floor moves.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       dev-dependencies:
         dependency-type: development
