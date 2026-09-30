@@ -57,7 +57,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        node: [20, 22, 24]
+        # 22 is the floor: @azure/identity requires it at runtime, and vitest 5
+        # drops 20. Node 20 went end-of-life in April 2026.
+        node: [22, 24]
         include:
           # Developed on Windows; the mock binds real sockets and the capture
           # sink writes real paths, so both deserve a run there.
