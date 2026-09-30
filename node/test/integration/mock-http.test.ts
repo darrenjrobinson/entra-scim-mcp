@@ -427,6 +427,14 @@ describe("mailNickname derivation on create", () => {
     expect(body.schemas).toContain(SCHEMA_ENTRA_USER);
   });
 
+  it("accepts a duplicate alias, as the live API does (probed 2026-09-30)", async () => {
+    const first = await call("POST", "/users", bare("same@contoso.com"));
+    const second = await call("POST", "/users", bare("same@fabrikam.com"));
+    expect([first.status, second.status]).toEqual([201, 201]);
+    const body = (await second.json()) as Record<string, any>;
+    expect(body[SCHEMA_ENTRA_USER].mailNickname).toBe("same");
+  });
+
   it("keeps an explicit mailNickname", async () => {
     const res = await call(
       "POST",
