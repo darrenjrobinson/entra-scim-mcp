@@ -23,10 +23,14 @@ const filterClauseSchema = z.object({
   attr: z
     .string()
     .describe(
-      "Attribute to filter on. 'eq' accepts displayName, id and members.value; 'ew' accepts displayName only.",
+      "Attribute to filter on. 'eq' accepts displayName, id, members.value, securityEnabled, mailEnabled and owners.value; 'ew' accepts displayName only. owners.value finds the groups a user owns.",
     ),
   op: z.enum(["eq", "ew"]).describe("'eq' is an exact match, 'ew' an ends-with match."),
-  value: z.string().describe("Value to compare against. Not case-sensitive."),
+  value: z
+    .string()
+    .describe(
+      'Value to compare against. Not case-sensitive. For securityEnabled and mailEnabled, pass "true" or "false" — it is sent unquoted, as the API expects.',
+    ),
 });
 
 /** See the note on the equivalent factory in users.ts. */
@@ -50,7 +54,7 @@ export function registerGroupTools(server: McpServer, client: ScimClient): void 
     {
       title: "List groups",
       description:
-        "List Entra groups via SCIM. Filter supports 'eq' on displayName/id/members.value and 'ew' on displayName; only 'and' is supported. Cursor-based pagination. A members.value filter is the only way to discover which groups a user belongs to — neither get_user nor get_group reports membership.",
+        "List Entra groups via SCIM. Filter supports 'eq' on displayName/id/members.value/securityEnabled/mailEnabled/owners.value and 'ew' on displayName; only 'and' is supported. Cursor-based pagination. A members.value filter is the only way to discover which groups a user belongs to — neither get_user nor get_group reports membership. For the reverse, a group's members, use list_users filtered on groups.value.",
       inputSchema: {
         filter: z
           .array(filterClauseSchema)
@@ -112,7 +116,7 @@ export function registerGroupTools(server: McpServer, client: ScimClient): void 
     {
       title: "Get group by id",
       description:
-        "Fetch a single group by id. Note: members are NOT returned, at any page size or projection. To find a user's groups, use list_groups with a members.value filter; to check one specific membership, filter list_groups on both id and members.value.",
+        "Fetch a single group by id. Note: members are NOT returned, at any page size or projection. To list this group's direct members, use list_users with a groups.value filter (Microsoft's recommended path); to find a user's groups, use list_groups with a members.value filter; to check one specific membership, filter list_groups on both id and members.value.",
       inputSchema: {
         id: z
           .string()

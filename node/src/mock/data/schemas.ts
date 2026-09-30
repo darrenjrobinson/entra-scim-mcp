@@ -132,11 +132,22 @@ const ENTRA_USER_SCHEMA: ScimSchema = {
   name: "MicrosoftEntraUser",
   description: "Microsoft Entra User Extension",
   attributes: [
+    // Still required:true on the live /Schemas (2026-09-30), even though the
+    // docs make it optional on create and Entra derives it from userName.
     attr("mailNickname", "string", { required: true }),
     attr("userType", "string"),
     attr("employeeLeaveDateTime", "dateTime"),
     attr("onPremisesImmutableId", "string"),
     attr("preferredLanguage", "string"),
+    // Filter target only (ownedGroups.value eq "<groupId>"); never returned.
+    attr("ownedGroups", "complex", {
+      multiValued: true,
+      mutability: "readOnly",
+      returned: "never",
+      subAttributes: [
+        attr("value", "string", { mutability: "readOnly", returned: "never" }),
+      ],
+    }),
   ],
   meta: { resourceType: "Schema", location: `/schemas/${SCHEMA_ENTRA_USER}` },
 };
@@ -152,6 +163,15 @@ const ENTRA_GROUP_SCHEMA: ScimSchema = {
     attr("securityEnabled", "boolean"),
     attr("groupTypes", "string", { multiValued: true }),
     attr("securityIdentifier", "string", { mutability: "readOnly" }),
+    // Filter target only (owners.value eq "<userId>"); never returned.
+    attr("owners", "complex", {
+      multiValued: true,
+      mutability: "readOnly",
+      returned: "never",
+      subAttributes: [
+        attr("value", "string", { mutability: "readOnly", returned: "never" }),
+      ],
+    }),
   ],
   meta: { resourceType: "Schema", location: `/schemas/${SCHEMA_ENTRA_GROUP}` },
 };

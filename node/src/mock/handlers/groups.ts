@@ -215,7 +215,8 @@ function sanitizeGroup(
   group: StoredGroup,
   validatorCompat: boolean,
 ): Record<string, unknown> {
-  const { members, ...rest } = structuredClone(group);
+  // Owners are never returned either — they exist only as a filter target.
+  const { members, owners: _owners, ...rest } = structuredClone(group);
   // Entra never returns members on group reads; RFC-standard clients (the
   // validator) expect them.
   return validatorCompat ? { ...rest, members } : rest;

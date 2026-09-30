@@ -89,6 +89,34 @@ describe("triangle e2e: every tool against the in-process mock", () => {
     userId = created.id as string;
   });
 
+  it("provision_user without mailNickname omits the Entra extension and lets it derive", async () => {
+    const created = await callOk("provision_user", {
+      userName: "derived.alias@contoso.local",
+      password: "S3cret!Pass",
+      displayName: "Derived Alias",
+      givenName: "Derived",
+      familyName: "Alias",
+    });
+    expect(created[SCHEMA_ENTRA_USER].mailNickname).toBe("derived.alias");
+    await callOk("deprovision_user", { id: created.id });
+  });
+
+  it("list_users rejects a count above 999", async () => {
+    await callErr("list_users", { count: 1000 });
+  });
+
+  it("list_users honours active and not(ew) filters", async () => {
+    const active = await callOk("list_users", {
+      filter: [{ attr: "active", op: "eq", value: "true" }],
+    });
+    expect(active.resources.some((r: { id: string }) => r.id === userId)).toBe(true);
+
+    const negated = await callOk("list_users", {
+      filter: [{ attr: "mailNickname", op: "ew", value: "user", not: true }],
+    });
+    expect(negated.resources.some((r: { id: string }) => r.id === userId)).toBe(false);
+  });
+
   it("get_user and list_users (filtered) find the user", async () => {
     const fetched = await callOk("get_user", { id: userId });
     expect(fetched.userName).toBe("e2e.user@contoso.local");

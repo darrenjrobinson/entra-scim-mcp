@@ -115,7 +115,30 @@ describe("discovery", () => {
     const res = await call("GET", "/resourcetypes");
     const body = (await res.json()) as Record<string, any>;
     expect(body.totalResults).toBe(2);
-    expect(body.Resources[0].schemaExtensions).toHaveLength(2);
+    // Enterprise, Entra and CSA — none required since mailNickname became
+    // optional on create. The Group extension is still required.
+    expect(body.Resources[0].schemaExtensions).toHaveLength(3);
+    expect(
+      body.Resources[0].schemaExtensions.every((e: { required: boolean }) => !e.required),
+    ).toBe(true);
+    expect(body.Resources[1].schemaExtensions[0].required).toBe(true);
+  });
+
+  it("advertises the filter-only ownership attributes as returned: never", async () => {
+    const find = async (urn: string, name: string) => {
+      const schema = (await (await call("GET", `/schemas/${urn}`)).json()) as {
+        attributes: { name: string; returned: string; multiValued: boolean }[];
+      };
+      return schema.attributes.find((a) => a.name === name);
+    };
+    const owned = await find(SCHEMA_ENTRA_USER, "ownedGroups");
+    const owners = await find(
+      "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:Group",
+      "owners",
+    );
+    for (const a of [owned, owners]) {
+      expect(a).toMatchObject({ returned: "never", multiValued: true });
+    }
   });
 
   it("serves all six schemas and individual lookups", async () => {
@@ -332,6 +355,94 @@ describe("cursor pagination", () => {
     } finally {
       await pagedMock.close();
     }
+  });
+});
+
+describe("page size ceilings", () => {
+  it("users: up to 999 with a manager-free projection, else 100; groups: 1000", async () => {
+    const bigMock = createMockServer({ token: TOKEN });
+    const { url } = await bigMock.listen(0);
+    try {
+      for (let i = 0; i < 1001; i++) {
+        bigMock.store.createUser({
+          schemas: [SCHEMA_USER_CORE],
+          userName: `big${i}@x.com`,
+        });
+        bigMock.store.createGroup({ schemas: [SCHEMA_GROUP_CORE], displayName: `g${i}` });
+      }
+      const size = async (path: string): Promise<number> => {
+        const res = await fetch(`${url}${path}`, {
+          headers: { Authorization: `Bearer ${TOKEN}` },
+        });
+        return ((await res.json()) as { resources: unknown[] }).resources.length;
+      };
+      expect(await size("/users?count=999&attributes=id,userName")).toBe(999);
+      expect(await size("/users?count=1000&attributes=id,userName")).toBe(999);
+      expect(await size("/users?count=999")).toBe(100);
+      expect(
+        await size(
+          "/users?count=999&attributes=id,urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager",
+        ),
+      ).toBe(100);
+      // The whole enterprise extension carries manager too, in either path form.
+      const enterprise = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
+      expect(await size(`/users?count=999&attributes=id,${enterprise}`)).toBe(100);
+      expect(await size(`/users?count=999&attributes=id,${enterprise}.manager`)).toBe(
+        100,
+      );
+      expect(
+        await size(`/users?count=999&attributes=id,${enterprise}:manager.value`),
+      ).toBe(100);
+      expect(await size(`/users?count=999&attributes=id,${enterprise}:department`)).toBe(
+        999,
+      );
+      expect(await size("/groups?count=1000")).toBe(1000);
+    } finally {
+      await bigMock.close();
+    }
+  });
+});
+
+describe("mailNickname derivation on create", () => {
+  const bare = (userName: string, ext?: unknown): Record<string, unknown> => ({
+    schemas: [SCHEMA_USER_CORE],
+    userName,
+    password: "P@ssw0rd!",
+    displayName: "Derived",
+    active: true,
+    name: { givenName: "D", familyName: "N" },
+    ...(ext !== undefined ? { [SCHEMA_ENTRA_USER]: ext } : {}),
+  });
+
+  it.each([
+    ["omitted", "abc123@contoso.com", undefined, "abc123"],
+    ["null", "nul123@contoso.com", { mailNickname: null }, "nul123"],
+    ["empty", "emp123@contoso.com", { mailNickname: "" }, "emp123"],
+    ["no @ in userName", "plainname", undefined, "plainname"],
+  ])("derives from userName when %s", async (_label, userName, ext, expected) => {
+    const res = await call("POST", "/users", bare(userName, ext));
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Record<string, any>;
+    expect(body[SCHEMA_ENTRA_USER].mailNickname).toBe(expected);
+    expect(body.schemas).toContain(SCHEMA_ENTRA_USER);
+  });
+
+  it("accepts a duplicate alias, as the live API does (probed 2026-09-30)", async () => {
+    const first = await call("POST", "/users", bare("same@contoso.com"));
+    const second = await call("POST", "/users", bare("same@fabrikam.com"));
+    expect([first.status, second.status]).toEqual([201, 201]);
+    const body = (await second.json()) as Record<string, any>;
+    expect(body[SCHEMA_ENTRA_USER].mailNickname).toBe("same");
+  });
+
+  it("keeps an explicit mailNickname", async () => {
+    const res = await call(
+      "POST",
+      "/users",
+      bare("keep@contoso.com", { mailNickname: "kept" }),
+    );
+    const body = (await res.json()) as Record<string, any>;
+    expect(body[SCHEMA_ENTRA_USER].mailNickname).toBe("kept");
   });
 });
 

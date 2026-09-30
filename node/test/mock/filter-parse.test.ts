@@ -75,7 +75,11 @@ describe("userMatches / groupMatches", () => {
     displayName: "Engineering",
   });
   store.addGroupMembers(g1.id, [u1.id]);
-  const ctx = { groupIdsOfUser: (id: string) => store.groupIdsOfUser(id) };
+  store.setGroupOwners(g1.id, [u2.id]);
+  const ctx = {
+    groupIdsOfUser: (id: string) => store.groupIdsOfUser(id),
+    groupIdsOwnedBy: (id: string) => store.groupIdsOwnedBy(id),
+  };
 
   it("matches userName eq case-insensitively", () => {
     const clauses = parseFilter('userName eq "adele.v@contoso.com"', "user");
@@ -92,6 +96,45 @@ describe("userMatches / groupMatches", () => {
   it("matches the Entra mailNickname extension attribute", () => {
     const clauses = parseFilter(`${SCHEMA_ENTRA_USER}:mailNickname eq "ADELEV"`, "user");
     expect(userMatches(u1, clauses, ctx)).toBe(true);
+  });
+
+  it("matches active as a bare, case-insensitive boolean", () => {
+    const active = parseFilter("active eq TRUE", "user");
+    expect(active).toEqual([{ attr: "active", op: "eq", value: "true" }]);
+    const inactive = store.createUser({
+      schemas: [SCHEMA_USER_CORE],
+      userName: "off@contoso.com",
+      active: false,
+    });
+    const u1Active = { ...u1, active: true };
+    expect(userMatches(u1Active, active, ctx)).toBe(true);
+    expect(userMatches(inactive, active, ctx)).toBe(false);
+    expect(userMatches(inactive, parseFilter("active eq false", "user"), ctx)).toBe(true);
+  });
+
+  it("negates ew with not(...)", () => {
+    const clauses = parseFilter(
+      `not(${SCHEMA_ENTRA_USER}:mailNickname ew "-admin") and userName ew "@contoso.com"`,
+      "user",
+    );
+    expect(clauses[0]).toMatchObject({ op: "ew", value: "-admin", not: true });
+    expect(userMatches(u1, clauses, ctx)).toBe(true);
+    const admin = { ...u1, [SCHEMA_ENTRA_USER]: { mailNickname: "adelev-admin" } };
+    expect(userMatches(admin, clauses, ctx)).toBe(false);
+  });
+
+  it("matches ownedGroups.value and owners.value through ownership", () => {
+    const owned = parseFilter(
+      `${SCHEMA_ENTRA_USER}:ownedGroups.value eq "${g1.id}"`,
+      "user",
+    );
+    expect(userMatches(u2, owned, ctx)).toBe(true);
+    expect(userMatches(u1, owned, ctx)).toBe(false);
+    const owners = parseFilter(`owners.value eq "${u2.id}"`, "group");
+    expect(groupMatches(g1, owners)).toBe(true);
+    expect(groupMatches(g1, parseFilter(`owners.value eq "${u1.id}"`, "group"))).toBe(
+      false,
+    );
   });
 
   it("matches groups.value through membership", () => {
@@ -190,6 +233,45 @@ describe("parsePermissiveFilter", () => {
       displayName: "Ada Lovelace",
     });
     const clauses = parsePermissiveFilter('displayName eq "Ada Lovelace"');
-    expect(userMatches(user, clauses, { groupIdsOfUser: () => [] })).toBe(true);
+    expect(
+      userMatches(user, clauses, { groupIdsOfUser: () => [], groupIdsOwnedBy: () => [] }),
+    ).toBe(true);
+  });
+});
+
+describe("parseFilter: Sep 2026 grammar additions", () => {
+  it("parses securityEnabled / mailEnabled as bare booleans on groups", () => {
+    expect(parseFilter("securityEnabled eq true", "group")[0]!.attr).toBe(
+      "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:Group:securityEnabled",
+    );
+    expect(
+      parseFilter(
+        "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:Group:mailEnabled eq False",
+        "group",
+      )[0]!.value,
+    ).toBe("false");
+  });
+
+  it("rejects a bare boolean on a string attribute", () => {
+    expect(() => parseFilter("userName eq true", "user")).toThrow(FilterValidationError);
+  });
+
+  it("rejects not() on eq, on groups, and when unclosed", () => {
+    expect(() => parseFilter('not(userName eq "a")', "user")).toThrow(
+      FilterValidationError,
+    );
+    expect(() => parseFilter('not(displayName ew "a")', "group")).toThrow(
+      FilterValidationError,
+    );
+    expect(() => parseFilter('not(userName ew "a"', "user")).toThrow(
+      FilterValidationError,
+    );
+  });
+
+  it("the permissive parser shares the grammar", () => {
+    expect(parsePermissiveFilter('not(displayName ew "x") and active eq true')).toEqual([
+      { attr: "displayName", op: "ew", value: "x", not: true },
+      { attr: "active", op: "eq", value: "true" },
+    ]);
   });
 });

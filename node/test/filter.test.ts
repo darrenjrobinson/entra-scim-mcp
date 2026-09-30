@@ -113,3 +113,61 @@ describe("buildGroupFilter", () => {
     );
   });
 });
+
+describe("Sep 2026 filter additions", () => {
+  it("emits active unquoted and normalises its case", () => {
+    expect(buildUserFilter({ attr: "active", op: "eq", value: "TRUE" })).toBe(
+      "active eq true",
+    );
+  });
+
+  it("rejects a non-boolean value for a boolean attribute", () => {
+    expect(() => buildUserFilter({ attr: "active", op: "eq", value: "yes" })).toThrow(
+      FilterValidationError,
+    );
+  });
+
+  it("renders ownedGroups.value with the Entra user URN", () => {
+    expect(buildUserFilter({ attr: "ownedGroups.value", op: "eq", value: "g-1" })).toBe(
+      'urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:User:ownedGroups.value eq "g-1"',
+    );
+  });
+
+  it("wraps a negated ew clause in not(...)", () => {
+    expect(
+      buildUserFilter([
+        { attr: "mailNickname", op: "ew", value: "-admin", not: true },
+        { attr: "userName", op: "ew", value: "@contoso.com" },
+      ]),
+    ).toBe(
+      'not(urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:User:mailNickname ew "-admin") and userName ew "@contoso.com"',
+    );
+  });
+
+  it("rejects not on eq, and on group filters", () => {
+    expect(() =>
+      buildUserFilter({ attr: "userName", op: "eq", value: "x", not: true }),
+    ).toThrow(FilterValidationError);
+    expect(() =>
+      buildGroupFilter({ attr: "displayName", op: "ew", value: "x", not: true }),
+    ).toThrow(FilterValidationError);
+  });
+
+  it("accepts not: false as a plain clause", () => {
+    expect(buildUserFilter({ attr: "userName", op: "eq", value: "x", not: false })).toBe(
+      'userName eq "x"',
+    );
+  });
+
+  it("supports the new group eq attributes", () => {
+    expect(buildGroupFilter({ attr: "securityEnabled", op: "eq", value: "true" })).toBe(
+      "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:Group:securityEnabled eq true",
+    );
+    expect(buildGroupFilter({ attr: "mailEnabled", op: "eq", value: "False" })).toBe(
+      "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:Group:mailEnabled eq false",
+    );
+    expect(buildGroupFilter({ attr: "owners.value", op: "eq", value: "u-1" })).toBe(
+      'urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:Group:owners.value eq "u-1"',
+    );
+  });
+});

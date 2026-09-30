@@ -1,5 +1,6 @@
 import { FilterValidationError } from "../scim/errors.js";
 import {
+  isBooleanFilterAttr,
   validateFilterClauses,
   type FilterClause,
   type ValidatedFilterClause,
@@ -24,32 +25,68 @@ const KNOWN_URNS = [
 ];
 
 /**
- * Parse the restricted Entra filter grammar — `attr (eq|ew) "value"` clauses
- * joined by `and` only — and validate each clause against the same allow-lists
- * the client-side builder uses. Throws FilterValidationError on anything the
- * real API would reject with 400 invalidFilter.
+ * One clause: `attr op "value"`, or `attr op true|false` for booleans, either
+ * optionally wrapped as `not(...)`. Group 1 is the not( opener, 2 the attr,
+ * 3 the op, 4 a quoted value, 5 a bare boolean.
+ */
+const CLAUSE_PATTERN =
+  /^(not\s*\(\s*)?(\S+?)\s+(\S+)\s+(?:"((?:[^"\\]|\\.)*)"|(true|false)\b)/i;
+
+/**
+ * Read the clause at the start of `rest`, returning it and the unread tail.
+ * Shared with the validator-compat permissive parser so both accept the same
+ * grammar; only the allow-list check differs.
+ */
+export function readClause(rest: string): {
+  clause: FilterClause;
+  /** True when the value was a bare boolean rather than a quoted string. */
+  bare: boolean;
+  rest: string;
+} {
+  const match = rest.match(CLAUSE_PATTERN);
+  if (!match) {
+    throw new FilterValidationError(`Unparseable filter near: ${rest.slice(0, 40)}`);
+  }
+  let tail = rest.slice(match[0].length);
+  const negated = match[1] !== undefined;
+  if (negated) {
+    const close = tail.match(/^\s*\)/);
+    if (!close) {
+      throw new FilterValidationError(`Unclosed not( near: ${rest.slice(0, 40)}`);
+    }
+    tail = tail.slice(close[0].length);
+  }
+  const clause: FilterClause = {
+    attr: match[2]!,
+    op: match[3]!.toLowerCase() as FilterClause["op"],
+    value: match[4] !== undefined ? unescapeQuotes(match[4]) : match[5]!,
+  };
+  if (negated) clause.not = true;
+  return { clause, bare: match[4] === undefined, rest: tail.trimStart() };
+}
+
+/**
+ * Parse the restricted Entra filter grammar — `attr (eq|ew) "value"` clauses,
+ * bare booleans, `not(...)` around a clause, joined by `and` only — and
+ * validate each clause against the same allow-lists the client-side builder
+ * uses. Throws FilterValidationError on anything the real API would reject
+ * with 400 invalidFilter.
  */
 export function parseFilter(
   raw: string,
   kind: "user" | "group",
 ): ValidatedFilterClause[] {
   const clauses: FilterClause[] = [];
+  const bare: boolean[] = [];
   let rest = raw.trim();
   if (rest.length === 0) {
     throw new FilterValidationError("Filter is empty.");
   }
-  const clausePattern = /^(\S+)\s+(\S+)\s+"((?:[^"\\]|\\.)*)"/;
   while (true) {
-    const match = rest.match(clausePattern);
-    if (!match) {
-      throw new FilterValidationError(`Unparseable filter near: ${rest.slice(0, 40)}`);
-    }
-    clauses.push({
-      attr: match[1]!,
-      op: match[2]!.toLowerCase() as FilterClause["op"],
-      value: unescapeQuotes(match[3]!),
-    });
-    rest = rest.slice(match[0].length).trimStart();
+    const read = readClause(rest);
+    clauses.push(read.clause);
+    bare.push(read.bare);
+    rest = read.rest;
     if (rest.length === 0) break;
     const joiner = rest.match(/^(and|or|not)\s+/i);
     if (!joiner) {
@@ -64,13 +101,26 @@ export function parseFilter(
     }
     rest = rest.slice(joiner[0].length);
   }
-  return validateFilterClauses(clauses, kind);
+  const validated = validateFilterClauses(clauses, kind);
+  validated.forEach((clause, i) => {
+    if (bare[i] && !isBooleanFilterAttr(clause.attr)) {
+      throw new FilterValidationError(
+        `Filter value for '${clause.attr}' must be a quoted string.`,
+      );
+    }
+  });
+  return validated;
 }
 
 export interface UserMatchContext {
   /** Direct group memberships, for groups.value clauses. */
   groupIdsOfUser(userId: string): string[];
+  /** Groups the user owns, for ownedGroups.value clauses. */
+  groupIdsOwnedBy(userId: string): string[];
 }
+
+const OWNED_GROUPS_VALUE = `${SCHEMA_ENTRA_USER}:ownedGroups.value`.toLowerCase();
+const OWNERS_VALUE = `${SCHEMA_ENTRA_GROUP}:owners.value`.toLowerCase();
 
 export function userMatches(
   user: StoredUser,
@@ -78,11 +128,14 @@ export function userMatches(
   ctx: UserMatchContext,
 ): boolean {
   return clauses.every((clause) => {
-    const attr = clause.attr;
-    if (attr.toLowerCase() === "groups.value") {
+    const attr = clause.attr.toLowerCase();
+    if (attr === "groups.value") {
       return ctx.groupIdsOfUser(user.id).some((gid) => equalsCi(gid, clause.value));
     }
-    return compare(resolveAttrValue(user, attr), clause);
+    if (attr === OWNED_GROUPS_VALUE) {
+      return ctx.groupIdsOwnedBy(user.id).some((gid) => equalsCi(gid, clause.value));
+    }
+    return compare(resolveAttrValue(user, clause.attr), clause);
   });
 }
 
@@ -91,8 +144,12 @@ export function groupMatches(
   clauses: ValidatedFilterClause[],
 ): boolean {
   return clauses.every((clause) => {
-    if (clause.attr.toLowerCase() === "members.value") {
+    const attr = clause.attr.toLowerCase();
+    if (attr === "members.value") {
       return group.members.some((m) => equalsCi(m.value, clause.value));
+    }
+    if (attr === OWNERS_VALUE) {
+      return group.owners.some((o) => equalsCi(o, clause.value));
     }
     return compare(resolveAttrValue(group, clause.attr), clause);
   });
@@ -143,9 +200,13 @@ function findValueCi(obj: Record<string, unknown>, name: string): unknown {
 }
 
 function compare(actual: string | undefined, clause: ValidatedFilterClause): boolean {
-  if (typeof actual !== "string") return false;
-  if (clause.op === "eq") return equalsCi(actual, clause.value);
-  return actual.toLowerCase().endsWith(clause.value.toLowerCase());
+  const hit =
+    typeof actual === "string" &&
+    (clause.op === "eq"
+      ? equalsCi(actual, clause.value)
+      : actual.toLowerCase().endsWith(clause.value.toLowerCase()));
+  // A missing value does not end with anything, so its negation matches.
+  return clause.not ? !hit : hit;
 }
 
 function equalsCi(a: string, b: string): boolean {
