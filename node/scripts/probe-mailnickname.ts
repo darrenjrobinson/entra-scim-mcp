@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Live probe for the Aug/Sep 2026 API changes (PR #15). Billed: ~14 calls.
+ * Live probe for the Aug/Sep 2026 API changes (PR #15). Billed: ~14 calls,
+ * plus 1 + one per owner when ENTRA_SCIM_SMOKE_OWNED_GROUP_ID is set.
  *
  *   npx tsx scripts/probe-mailnickname.ts --confirm
  *
@@ -45,6 +46,8 @@ if (!DOMAIN) {
 }
 const tag = randomBytes(3).toString("hex");
 const created: string[] = [];
+/** Checks with a definite expected answer; any entry makes the run exit 1. */
+const failures: string[] = [];
 const password = `P${randomBytes(9).toString("base64url")}!9a`;
 
 async function tool(name: string, args: Record<string, unknown>) {
@@ -163,39 +166,42 @@ try {
     const r = await tool("list_groups", args);
     report(label, r.ok ? { ok: true, returned: r.out.resources?.length } : r.out);
   }
-  const owner = await tool("list_users", {
-    filter: [{ attr: "userName", op: "eq", value: "darrenjrobinson@credentialite.com" }],
-    attributes: ["id"],
-  });
-  const ownerId = owner.out?.resources?.[0]?.id;
-  if (ownerId) {
-    const og = await tool("list_groups", {
-      filter: [{ attr: "owners.value", op: "eq", value: ownerId }],
-      attributes: ["id", "displayName"],
+  // 5. Ownership filters, both directions, against a known owned group.
+  // Skipped without ENTRA_SCIM_SMOKE_OWNED_GROUP_ID: with no group to aim at,
+  // an empty result cannot tell a broken filter from a tenant with no owners.
+  const ownedGroupId = process.env.ENTRA_SCIM_SMOKE_OWNED_GROUP_ID?.trim();
+  if (!ownedGroupId) {
+    report("ownership filters", { skipped: "set ENTRA_SCIM_SMOKE_OWNED_GROUP_ID" });
+  } else {
+    const owners = await tool("list_users", {
+      filter: [{ attr: "ownedGroups.value", op: "eq", value: ownedGroupId }],
+      attributes: ["id"],
     });
-    report(
-      "list_groups owners.value eq <darren>",
-      og.ok ? { ok: true, returned: og.out.resources?.length } : og.out,
-    );
-    const ou =
-      og.ok && og.out.resources?.[0]
-        ? await tool("list_users", {
-            filter: [
-              { attr: "ownedGroups.value", op: "eq", value: og.out.resources[0].id },
-            ],
-            attributes: ["id"],
-          })
-        : undefined;
-    if (ou)
-      report(
-        "list_users ownedGroups.value eq <that group>",
-        ou.ok
-          ? {
-              ok: true,
-              containsOwner: ou.out.resources?.some((r: any) => r.id === ownerId),
-            }
-          : ou.out,
-      );
+    const ownerIds: string[] = owners.ok
+      ? (owners.out.resources ?? []).map((r: { id: string }) => r.id)
+      : [];
+    const found = owners.ok && ownerIds.length > 0;
+    if (!found) failures.push("ownedGroups.value returned no owners");
+    report("list_users ownedGroups.value eq <group>", {
+      pass: found,
+      owners: ownerIds.length,
+      ...(owners.ok ? {} : { error: owners.out }),
+    });
+    for (const ownerId of ownerIds) {
+      const groups = await tool("list_groups", {
+        filter: [{ attr: "owners.value", op: "eq", value: ownerId }],
+        attributes: ["id"],
+      });
+      const includes =
+        groups.ok &&
+        (groups.out.resources ?? []).some((r: { id: string }) => r.id === ownedGroupId);
+      if (!includes) failures.push(`owners.value for ${ownerId} missed the group`);
+      report(`list_groups owners.value eq <owner ${ownerId}>`, {
+        pass: includes,
+        returned: groups.ok ? groups.out.resources?.length : undefined,
+        ...(groups.ok ? {} : { error: groups.out }),
+      });
+    }
   }
 } finally {
   for (const id of created) {
@@ -203,3 +209,9 @@ try {
     console.log(`cleanup ${id}: ${d.ok ? "deleted" : JSON.stringify(d.out)}`);
   }
 }
+
+if (failures.length > 0) {
+  console.error(`\nFAILED:\n  ${failures.join("\n  ")}`);
+  process.exit(1);
+}
+console.log("\nall checks with an expected answer passed");
