@@ -1,11 +1,16 @@
 import { FilterValidationError } from "../../scim/errors.js";
 import type { ValidatedFilterClause } from "../../scim/filter.js";
-import { SCHEMA_ENTRA_USER, type ScimUserCreatePayload } from "../../scim/types.js";
+import {
+  SCHEMA_ENTERPRISE_USER,
+  SCHEMA_ENTRA_USER,
+  type ScimUserCreatePayload,
+} from "../../scim/types.js";
 import { MockScimError } from "../errors.js";
-import { parseFilter, userMatches } from "../filter-parse.js";
+import { parseFilter, readClause, userMatches } from "../filter-parse.js";
 import { applyUserPatch } from "../patch-apply.js";
 import type { MockStore, StoredUser } from "../store.js";
 import {
+  DEFAULT_PAGE_SIZE,
   listResponseBody,
   paginate,
   projectResource,
@@ -32,7 +37,10 @@ export function listUsers(ctx: HandlerContext, query: URLSearchParams): HandlerR
   // to be rejected like the whitespace-only filter it is a hair away from.
   if (rawFilter !== null) {
     const clauses = parseUserFilter(rawFilter, ctx.validatorCompat);
-    const matchCtx = { groupIdsOfUser: (id: string) => ctx.store.groupIdsOfUser(id) };
+    const matchCtx = {
+      groupIdsOfUser: (id: string) => ctx.store.groupIdsOfUser(id),
+      groupIdsOwnedBy: (id: string) => ctx.store.groupIdsOwnedBy(id),
+    };
     users = users.filter((user) => userMatches(user, clauses, matchCtx));
   }
   const page = paginate(users, pageParams(query), ctx.validatorCompat);
@@ -78,11 +86,29 @@ const REQUIRED_CREATE_ATTRS: {
   { label: "active", present: (u) => typeof u.active === "boolean" },
   { label: "name.givenName", present: (u) => nonEmpty(u.name?.givenName) },
   { label: "name.familyName", present: (u) => nonEmpty(u.name?.familyName) },
-  {
-    label: `${SCHEMA_ENTRA_USER}:mailNickname`,
-    present: (u) => nonEmpty(u[SCHEMA_ENTRA_USER]?.mailNickname),
-  },
+  // mailNickname was required here until Aug 2026; Entra now derives it from
+  // userName when it is omitted, null or empty (see deriveMailNickname).
 ];
+
+/**
+ * Entra's documented fallback: everything before the first "@" in userName,
+ * or the whole userName when it has none. Fills in the extension (and its
+ * schema URN) only when the caller left mailNickname missing, null or empty.
+ */
+function deriveMailNickname(user: ScimUserCreatePayload): ScimUserCreatePayload {
+  if (nonEmpty(user[SCHEMA_ENTRA_USER]?.mailNickname)) return user;
+  if (typeof user.userName !== "string" || user.userName.length === 0) return user;
+  const at = user.userName.indexOf("@");
+  const mailNickname = at === -1 ? user.userName : user.userName.slice(0, at);
+  const schemas = Array.isArray(user.schemas) ? user.schemas : [];
+  return {
+    ...user,
+    schemas: schemas.includes(SCHEMA_ENTRA_USER)
+      ? schemas
+      : [...schemas, SCHEMA_ENTRA_USER],
+    [SCHEMA_ENTRA_USER]: { ...user[SCHEMA_ENTRA_USER], mailNickname },
+  };
+}
 
 export function createUser(ctx: HandlerContext, body: unknown): HandlerResponse {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -104,7 +130,7 @@ export function createUser(ctx: HandlerContext, body: unknown): HandlerResponse 
       "invalidValue",
     );
   }
-  const created = ctx.store.createUser(user);
+  const created = ctx.store.createUser(deriveMailNickname(user));
   return {
     status: 201,
     body: sanitizeUser(created),
@@ -170,19 +196,14 @@ export function parsePermissiveFilter(raw: string): ValidatedFilterClause[] {
     throw new FilterValidationError("Filter is empty.");
   }
 
-  const clausePattern = /^(\S+)\s+(eq|ew)\s+"((?:[^"\\]|\\.)*)"/i;
   for (;;) {
-    const match = rest.match(clausePattern);
-    if (!match) {
+    const read = readClause(rest);
+    if (read.clause.op !== "eq" && read.clause.op !== "ew") {
       throw new FilterValidationError(`Unparseable filter near: ${rest.slice(0, 40)}`);
     }
-    clauses.push({
-      attr: match[1]!,
-      op: match[2]!.toLowerCase() as ValidatedFilterClause["op"],
-      value: match[3]!.replace(/\\(["\\])/g, "$1"),
-    });
+    clauses.push(read.clause);
 
-    rest = rest.slice(match[0].length).trimStart();
+    rest = read.rest;
     if (rest.length === 0) break;
 
     // A trailing `(and\s+)?` on the clause pattern used to make the joiner
@@ -210,11 +231,25 @@ function sanitizeUser(user: StoredUser): Record<string, unknown> {
   return rest;
 }
 
+const USER_MAX_PAGE_SIZE = 999;
+const MANAGER_ATTR = `${SCHEMA_ENTERPRISE_USER}:manager`.toLowerCase();
+
+/**
+ * Users page at up to 999, but only under an `attributes` projection that
+ * leaves out the enterprise manager. Without one, or with manager in it, the
+ * API ignores a larger count and serves the default 100.
+ */
 function pageParams(query: URLSearchParams): PageParams {
+  const attributes = query.get("attributes");
+  const largePages =
+    attributes !== null &&
+    attributes.length > 0 &&
+    !attributes.split(",").some((a) => a.trim().toLowerCase() === MANAGER_ATTR);
   return {
     count: query.get("count"),
     cursor: query.get("cursor"),
     startIndex: query.get("startIndex"),
+    maxPageSize: largePages ? USER_MAX_PAGE_SIZE : DEFAULT_PAGE_SIZE,
   };
 }
 

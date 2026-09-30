@@ -1,5 +1,6 @@
 import {
   SCHEMA_ENTERPRISE_USER,
+  SCHEMA_ENTRA_CSA,
   SCHEMA_ENTRA_GROUP,
   SCHEMA_ENTRA_USER,
   SCHEMA_GROUP_CORE,
@@ -48,8 +49,11 @@ const USER_RESOURCE_TYPE: ResourceType = {
   description: "User Account",
   schema: SCHEMA_USER_CORE,
   schemaExtensions: [
-    { schema: SCHEMA_ENTERPRISE_USER, required: true },
-    { schema: SCHEMA_ENTRA_USER, required: true },
+    // Both false since Aug 2026, when mailNickname became optional on create
+    // (live tenant confirmed 2026-09-30). The Group extension is still required.
+    { schema: SCHEMA_ENTERPRISE_USER, required: false },
+    { schema: SCHEMA_ENTRA_USER, required: false },
+    { schema: SCHEMA_ENTRA_CSA, required: false },
   ],
   meta: { location: "/resourcetypes/user", resourceType: "resourceType" },
 };

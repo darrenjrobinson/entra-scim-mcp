@@ -21,10 +21,20 @@ const filterClauseSchema = z.object({
   attr: z
     .string()
     .describe(
-      "Attribute to filter on. 'eq' accepts userName, externalId, id, groups.value and mailNickname; 'ew' accepts userName and mailNickname only.",
+      "Attribute to filter on. 'eq' accepts userName, externalId, id, active, groups.value, mailNickname and ownedGroups.value; 'ew' accepts userName and mailNickname only. groups.value finds a group's direct members; ownedGroups.value finds a group's owners.",
     ),
   op: z.enum(["eq", "ew"]).describe("'eq' is an exact match, 'ew' an ends-with match."),
-  value: z.string().describe("Value to compare against. Not case-sensitive."),
+  value: z
+    .string()
+    .describe(
+      'Value to compare against. Not case-sensitive. For active, pass "true" or "false" — it is sent unquoted, as the API expects.',
+    ),
+  not: z
+    .boolean()
+    .optional()
+    .describe(
+      "Negate the clause, sent as not(...). Allowed only on 'ew' against userName or mailNickname — e.g. exclude aliases ending \"-admin\".",
+    ),
 });
 
 /**
@@ -87,7 +97,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
     {
       title: "List users",
       description:
-        "List Entra users via SCIM. Filter supports 'eq' on userName/externalId/id/groups.value/mailNickname and 'ew' on userName/mailNickname; only 'and' is supported. Cursor-based pagination. This is also how you resolve a userName to an object id, since every other user tool takes the id. Prefer a filter plus a narrow 'attributes' list over listing everything: each page is a separate billed request.",
+        "List Entra users via SCIM. Filter supports 'eq' on userName/externalId/id/active/groups.value/mailNickname/ownedGroups.value and 'ew' on userName/mailNickname, with not(...) allowed on 'ew' clauses; only 'and' combines them. Cursor-based pagination. This is also how you resolve a userName to an object id, since every other user tool takes the id, and how you list a group's direct members (groups.value eq \"<groupId>\") — get_group never returns them. Prefer a filter plus a narrow 'attributes' list over listing everything: each page is a separate billed request. An app granted only User.ReadBasic.All can filter on id and userName alone.",
       inputSchema: {
         filter: z
           .array(filterClauseSchema)
@@ -107,7 +117,15 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
           .describe(
             "Attributes to exclude from the response. Mutually exclusive with attributes.",
           ),
-        count: z.number().int().positive().optional().describe("Page size."),
+        count: z
+          .number()
+          .int()
+          .positive()
+          .max(999)
+          .optional()
+          .describe(
+            "Page size, default 100, maximum 999. Above 100 only takes effect with an 'attributes' projection that leaves out urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager; otherwise the service quietly returns 100.",
+          ),
         cursor: z
           .string()
           .optional()
@@ -122,7 +140,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
     },
     wrapTool(
       async (args: {
-        filter?: { attr: string; op: "eq" | "ew"; value: string }[];
+        filter?: { attr: string; op: "eq" | "ew"; value: string; not?: boolean }[];
         attributes?: string[];
         excludedAttributes?: string[];
         count?: number;
@@ -149,7 +167,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
     {
       title: "Get user by id",
       description:
-        "Fetch a single user by Entra object id. Two things are never in the response, whatever you project: Custom Security Attributes (the schema marks them returned:\"request\" — use get_user_custom_security_attributes) and group memberships (filter list_groups on members.value instead). To look a user up by userName rather than id, use list_users with an 'eq' filter.",
+        "Fetch a single user by Entra object id. Two things are never in the response, whatever you project: Custom Security Attributes (the schema marks them returned:\"request\" — use get_user_custom_security_attributes) and group memberships (filter list_groups on members.value instead; for the reverse, a group's members, filter list_users on groups.value). To look a user up by userName rather than id, use list_users with an 'eq' filter.",
       inputSchema: {
         id: z
           .string()
@@ -196,7 +214,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
     {
       title: "Provision user",
       description:
-        "Create a user in Entra via SCIM. Enforces the required attribute set: userName, password, displayName, givenName, familyName, mailNickname. active defaults to true. Not idempotent — a second call with the same userName fails with a uniqueness conflict, so check with list_users first if a retry might be a duplicate. Group membership is not settable here: create the user, then call add_group_members.",
+        "Create a user in Entra via SCIM. Enforces the required attribute set: userName, password, displayName, givenName, familyName. mailNickname is optional — omit it and Entra derives it from userName. active defaults to true. Not idempotent — a second call with the same userName fails with a uniqueness conflict, so check with list_users first if a retry might be a duplicate. Group membership is not settable here: create the user, then call add_group_members.",
       inputSchema: {
         userName: z
           .string()
@@ -216,8 +234,9 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
         mailNickname: z
           .string()
           .min(1)
+          .optional()
           .describe(
-            "Mail alias, local part only (no @domain). Required by Entra and, once set, cannot be removed by update_user.",
+            'Mail alias, local part only (no @domain). Omit it to have Entra derive it from userName: everything before the first "@", or the whole userName if there is none ("abc123@contoso.com" gives "abc123"). It must be unique in the tenant, so a derived alias that is already taken fails the create. Once set it cannot be removed by update_user.',
           ),
         active: z
           .boolean()
@@ -278,7 +297,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
         displayName: string;
         givenName: string;
         familyName: string;
-        mailNickname: string;
+        mailNickname?: string;
         active?: boolean;
         externalId?: string;
         userType?: string;
@@ -303,10 +322,15 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
         if (args.employeeNumber) enterprise.employeeNumber = args.employeeNumber;
         if (args.managerId) enterprise.manager = { value: args.managerId };
 
-        const entra: Record<string, unknown> = { mailNickname: args.mailNickname };
+        // Sent only when it carries something: with mailNickname omitted, Entra
+        // derives it from userName, and the API's own create example leaves
+        // the extension out entirely.
+        const entra: Record<string, unknown> = {};
+        if (args.mailNickname) entra.mailNickname = args.mailNickname;
         if (args.userType) entra.userType = args.userType;
 
-        const schemas = [SCHEMA_USER_CORE, SCHEMA_ENTRA_USER];
+        const schemas = [SCHEMA_USER_CORE];
+        if (Object.keys(entra).length > 0) schemas.push(SCHEMA_ENTRA_USER);
         if (Object.keys(enterprise).length > 0) schemas.push(SCHEMA_ENTERPRISE_USER);
 
         const body: ScimUserCreatePayload = {
@@ -323,7 +347,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
           ...(args.emails ? { emails: args.emails } : {}),
           ...(args.phoneNumbers ? { phoneNumbers: args.phoneNumbers } : {}),
           ...(args.addresses ? { addresses: args.addresses } : {}),
-          [SCHEMA_ENTRA_USER]: entra,
+          ...(Object.keys(entra).length > 0 ? { [SCHEMA_ENTRA_USER]: entra } : {}),
           ...(Object.keys(enterprise).length > 0
             ? { [SCHEMA_ENTERPRISE_USER]: enterprise }
             : {}),
@@ -343,7 +367,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
     {
       title: "Update user",
       description:
-        'PATCH a user with SCIM operations — e.g. { op: "replace", path: "displayName", value: "Ada L" }, or { op: "replace", path: "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:department", value: "R&D" }. Operations are validated before anything is sent: removing mailNickname (or nulling it out) is blocked, because Entra cannot re-derive it, and addresses[...] paths must use exactly [type eq "work"] — the only filter the API accepts there. Other complex multi-valued paths (e.g. emails[type eq "work" and primary eq true].value) are passed through as-is. Not the tool for Custom Security Attributes (use update_user_custom_security_attributes), employeeLeaveDateTime (use update_user_lifecycle), or group membership (use add_group_members / remove_group_member).',
+        'PATCH a user with SCIM operations — e.g. { op: "replace", path: "displayName", value: "Ada L" }, or { op: "replace", path: "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:department", value: "R&D" }. Operations are validated before anything is sent: removing mailNickname (or nulling it out) is blocked, because Entra rejects removing it once the user exists, and addresses[...] paths must use exactly [type eq "work"] — the only filter the API accepts there. Other complex multi-valued paths (e.g. emails[type eq "work" and primary eq true].value) are passed through as-is. Not the tool for Custom Security Attributes (use update_user_custom_security_attributes), employeeLeaveDateTime (use update_user_lifecycle), or group membership (use add_group_members / remove_group_member).',
       inputSchema: {
         id: z.string().min(1).describe("Entra object id of the user to patch."),
         operations: z

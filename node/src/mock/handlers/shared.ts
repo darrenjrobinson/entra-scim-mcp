@@ -24,6 +24,8 @@ export interface PageParams {
   cursor?: string | null;
   /** validator-compat only: 1-based index pagination */
   startIndex?: string | null;
+  /** Per-resource ceiling a larger count is clamped to. Defaults to MAX_PAGE_SIZE. */
+  maxPageSize?: number;
 }
 
 export function paginate<T>(
@@ -31,7 +33,7 @@ export function paginate<T>(
   params: PageParams,
   validatorCompat: boolean,
 ): { page: T[]; nextCursor?: string; startIndex?: number; totalResults: number } {
-  const count = parseCount(params.count);
+  const count = parseCount(params.count, params.maxPageSize ?? MAX_PAGE_SIZE);
   let offset = 0;
   let usedIndex = false;
 
@@ -66,13 +68,13 @@ export function paginate<T>(
   return result;
 }
 
-function parseCount(raw: string | null | undefined): number {
+function parseCount(raw: string | null | undefined, max: number): number {
   if (raw === undefined || raw === null || raw === "") return DEFAULT_PAGE_SIZE;
   const count = Number(raw);
   if (!Number.isInteger(count) || count < 1) {
     throw new MockScimError(400, "count must be a positive integer.", "invalidValue");
   }
-  return Math.min(count, MAX_PAGE_SIZE);
+  return Math.min(count, max);
 }
 
 function encodeCursor(offset: number): string {

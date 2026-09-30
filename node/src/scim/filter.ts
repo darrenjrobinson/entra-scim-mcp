@@ -1,5 +1,5 @@
 import { FilterValidationError } from "./errors.js";
-import { SCHEMA_ENTRA_USER, SCHEMA_ENTRA_CSA } from "./types.js";
+import { SCHEMA_ENTRA_GROUP, SCHEMA_ENTRA_USER, SCHEMA_ENTRA_CSA } from "./types.js";
 
 export type FilterOp = "eq" | "ew";
 
@@ -7,6 +7,8 @@ export interface FilterClause {
   attr: string;
   op: FilterOp;
   value: string;
+  /** Negate the clause as not(...). The API allows this on 'ew' only. */
+  not?: boolean;
 }
 
 export type FilterInput = FilterClause | FilterClause[];
@@ -15,37 +17,65 @@ export type FilterInput = FilterClause | FilterClause[];
 // https://learn.microsoft.com/entra/identity/app-provisioning/entra-id-scim-api-reference.
 // Keys are case-insensitive; canonical casing is stored as the value.
 
+/** Accept both the short name and the fully-qualified URN form of an extension attribute. */
+function extensionAttr(urn: string, name: string): Record<string, string> {
+  const canonical = `${urn}:${name}`;
+  return {
+    [name.toLowerCase()]: canonical,
+    [canonical.toLowerCase()]: canonical,
+  };
+}
+
 const USER_EQ_ATTRS: Record<string, string> = {
   username: "userName",
   externalid: "externalId",
   id: "id",
+  active: "active",
   "groups.value": "groups.value",
-  mailnickname: `${SCHEMA_ENTRA_USER}:mailNickname`,
-  [`${SCHEMA_ENTRA_USER.toLowerCase()}:mailnickname`]: `${SCHEMA_ENTRA_USER}:mailNickname`,
+  ...extensionAttr(SCHEMA_ENTRA_USER, "mailNickname"),
+  ...extensionAttr(SCHEMA_ENTRA_USER, "ownedGroups.value"),
 };
 
 const USER_EW_ATTRS: Record<string, string> = {
   username: "userName",
-  mailnickname: `${SCHEMA_ENTRA_USER}:mailNickname`,
-  [`${SCHEMA_ENTRA_USER.toLowerCase()}:mailnickname`]: `${SCHEMA_ENTRA_USER}:mailNickname`,
+  ...extensionAttr(SCHEMA_ENTRA_USER, "mailNickname"),
 };
 
 const GROUP_EQ_ATTRS: Record<string, string> = {
   displayname: "displayName",
   id: "id",
   "members.value": "members.value",
+  ...extensionAttr(SCHEMA_ENTRA_GROUP, "securityEnabled"),
+  ...extensionAttr(SCHEMA_ENTRA_GROUP, "mailEnabled"),
+  ...extensionAttr(SCHEMA_ENTRA_GROUP, "owners.value"),
 };
 
 const GROUP_EW_ATTRS: Record<string, string> = {
   displayname: "displayName",
 };
 
+/**
+ * Attributes compared against a bare boolean. The API documents these as
+ * `active eq true` — no quotes — so they are emitted unquoted.
+ */
+const BOOLEAN_ATTRS = new Set([
+  "active",
+  `${SCHEMA_ENTRA_GROUP}:securityEnabled`,
+  `${SCHEMA_ENTRA_GROUP}:mailEnabled`,
+]);
+
+export function isBooleanFilterAttr(canonicalAttr: string): boolean {
+  return BOOLEAN_ATTRS.has(canonicalAttr);
+}
+
 /** A filter clause whose attr has been resolved to the API's canonical casing. */
 export interface ValidatedFilterClause {
   /** Canonical attribute name (e.g. "userName", "urn:...:User:mailNickname"). */
   attr: string;
   op: FilterOp;
+  /** For boolean attributes, normalised to lowercase "true" / "false". */
   value: string;
+  not?: boolean;
 }
 
 export function buildUserFilter(input: FilterInput | undefined): string | undefined {
@@ -111,7 +141,29 @@ export function validateFilterClause(
       `Attribute '${clause.attr}' is not allowed with operator '${clause.op}' on ${kind} filters.`,
     );
   }
-  return { attr: canonical, op: clause.op, value: clause.value };
+  let value = clause.value;
+  if (BOOLEAN_ATTRS.has(canonical)) {
+    value = value.toLowerCase();
+    if (value !== "true" && value !== "false") {
+      throw new FilterValidationError(
+        `Filter value for '${canonical}' must be true or false; got '${clause.value}'.`,
+      );
+    }
+  }
+  if (clause.not !== undefined && typeof clause.not !== "boolean") {
+    throw new FilterValidationError(`'not' on '${clause.attr}' must be a boolean.`);
+  }
+  if (clause.not) {
+    // The API negates only 'ew', and only on the two attributes 'ew' accepts
+    // on users. Groups document no negation at all.
+    if (kind !== "user" || clause.op !== "ew") {
+      throw new FilterValidationError(
+        `'not' is only supported on 'ew' clauses against userName or mailNickname (Entra SCIM API constraint).`,
+      );
+    }
+    return { attr: canonical, op: clause.op, value, not: true };
+  }
+  return { attr: canonical, op: clause.op, value };
 }
 
 function buildFilter(
@@ -121,9 +173,13 @@ function buildFilter(
   if (input === undefined) return undefined;
   const clauses = Array.isArray(input) ? input : [input];
   if (clauses.length === 0) return undefined;
-  return validateFilterClauses(clauses, kind)
-    .map((c) => `${c.attr} ${c.op} "${escapeQuotes(c.value)}"`)
-    .join(" and ");
+  return validateFilterClauses(clauses, kind).map(renderClause).join(" and ");
+}
+
+function renderClause(c: ValidatedFilterClause): string {
+  const value = BOOLEAN_ATTRS.has(c.attr) ? c.value : `"${escapeQuotes(c.value)}"`;
+  const clause = `${c.attr} ${c.op} ${value}`;
+  return c.not ? `not(${clause})` : clause;
 }
 
 function rejectsCustomSecurityAttributesInFilter(attr: string): boolean {

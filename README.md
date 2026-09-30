@@ -23,6 +23,7 @@ Before this server can talk to your tenant, complete the one-time setup in the [
     - `CustomSecAttributeAssignment.ReadWrite.All`, `CustomSecAttributeDefinition.Read.All` (CSA tools)
     - `User-LifeCycleInfo.ReadWrite.All` (lifecycle tools)
     - `User-Mail.ReadWrite.All`, `User-Phone.ReadWrite.All`, `User.EnableDisableAccount.All` (least-privilege alternatives)
+    - Narrower options added Sep 2026, if you only use part of the toolset: `User.ReadBasic.All` (read-only; filters on `id` and `userName` only), `User.Create` (create only), `User.ReadUpdate.All` (update only, no create or delete), `Group.Create` (create only), `GroupMember.ReadWrite.All` (`add_group_members` / `remove_group_member` only; `update_group` property changes still need `Group.ReadWrite.All`)
    Grant admin consent.
 4. Create **either** a client secret **or** upload a PEM client certificate.
 
@@ -146,16 +147,16 @@ write that discards or replaces state with no undo through this API
 | `get_service_provider_config` | read | One-shot capability discovery. Static per API version — fetch once and reuse. |
 | `list_resource_types` | read | Enumerate SCIM resource types (User, Group). |
 | `list_schemas` | read | Enumerate SCIM schemas and Entra extensions, with each attribute's type, mutability and default-return. Check a patch path here before building it. |
-| `list_users` | read | List users; supports the API's restricted filter (eq/ew, and-only) and cursor pagination. Also how you resolve a `userName` to the object id every other user tool wants. |
+| `list_users` | read | List users; supports the API's restricted filter (eq/ew, and-only, `not()` around `ew`) and cursor pagination up to 999 per page. Also how you resolve a `userName` to the object id every other user tool wants, and how you list a group's members (`groups.value eq "<groupId>"`). |
 | `get_user` | read | Read a single user by id with optional attribute projection. Neither CSAs nor group membership are ever included. |
-| `provision_user` | add | Create a user with the required attribute set enforced (userName, password, displayName, name.givenName, name.familyName, mailNickname). |
+| `provision_user` | add | Create a user with the required attribute set enforced (userName, password, displayName, name.givenName, name.familyName). `mailNickname` is optional; Entra derives it from `userName` when omitted. |
 | `update_user` | overwrite | PATCH a user; blocks `remove` of mailNickname and enforces `[type eq "work"]` on address paths. |
 | `deprovision_user` | overwrite | DELETE a user. Soft-deleted for 30 days, restorable only via Graph; also strips every group membership. |
 | `update_user_lifecycle` | overwrite | Set lifecycle attrs (e.g. `employeeLeaveDateTime`) — which Lifecycle Workflows can fire off. Requires `User-LifeCycleInfo.ReadWrite.All`. |
 | `get_user_custom_security_attributes` | read | Read a user's CSAs, projected by attribute set. `attributeSets` is **required** — the API rejects the bare extension URN, and CSAs never come back from a plain `get_user`. |
 | `update_user_custom_security_attributes` | overwrite | PATCH CSAs on a user. `remove`, or `replace` with an empty array, deletes an assignment. |
 | `list_groups` | read | List groups with the API's restricted filter set. A `members.value` filter is the only way to read membership. |
-| `get_group` | read | Read a single group (members are NOT returned — use `list_groups` with a `members.value` filter). |
+| `get_group` | read | Read a single group (members are NOT returned — list them with `list_users` filtered on `groups.value`). |
 | `create_group` | add | POST a group. Sets `mailEnabled`, `securityEnabled`, `mailNickname`, `description` via the Entra extension. `displayName` is not unique. |
 | `update_group` | overwrite | PATCH group attributes only (membership ops are rejected here; type flags are fixed at creation). |
 | `add_group_members` | add | Add ≥1 users to a group — auto-chunks at 20 ids per PATCH (API cap), one Operation per PATCH. Idempotent. Each PATCH is atomic per RFC 7644, but a multi-chunk sequence is not: if a later chunk fails, **this server** (not the API) raises `AddGroupMembersPartialFailure` naming `addedMemberIds` / `failedMemberIds` / `notAttemptedMemberIds`, so a partial write is never silent. |
@@ -194,7 +195,8 @@ looking read-only fails the suite.
 
 The Entra SCIM API has constraints that are easy to miss. The tool layer rejects bad input before a request is sent:
 
-- **Filter allow-list**: only the documented attributes and operators per resource; `or` is rejected; `externalId` cannot be combined with another clause.
+- **Filter allow-list**: only the documented attributes and operators per resource; `or` is rejected; `not()` is allowed only around a user `ew` clause on `userName` or `mailNickname`; `externalId` cannot be combined with another clause; boolean attributes (`active`, `securityEnabled`, `mailEnabled`) must be `true`/`false` and are sent unquoted.
+- **Page size**: `list_users` caps `count` at 999. Anything above 100 only takes effect with an `attributes` projection that leaves out the enterprise `manager`; otherwise the API quietly serves 100.
 - **Query strings**: no whitespace around `=` (the API returns 400 for any).
 - **User PATCH**: `remove` of `mailNickname` is blocked; addresses path filter must be exactly `[type eq "work"]`.
 - **Group PATCH**: membership ops go through dedicated tools so the 20-member add cap and the single-remove rule are guaranteed.
@@ -215,7 +217,9 @@ Things the live API does that the docs either state ambiguously or not at all. E
 - `op: "remove"` on a CSA path clears that one assignment and leaves the others intact.
 - `replace` with `[]` on a multi-valued attribute **removes** the assignment — a later read omits the attribute entirely rather than returning an empty array.
 
-**`password` is required on create but never readable.** It is `writeOnly` / `returned: never`, and no response ever echoes it. The full required create set is `userName`, `password`, `displayName`, `name.givenName`, `name.familyName` and `mailNickname` — considerably stricter than RFC 7643, which requires only `userName`.
+**`password` is required on create but never readable.** It is `writeOnly` / `returned: never`, and no response ever echoes it. The full required create set is `userName`, `password`, `displayName`, `name.givenName` and `name.familyName`, which is considerably stricter than RFC 7643, where only `userName` is required.
+
+**`mailNickname` is optional on create, and permanent once set.** Since August 2026 Entra derives it from `userName` when it is omitted, `null` or empty: everything before the first `@`, or the whole value when there is none (`abc123@contoso.com` gives `abc123`). It is still unique across the tenant, so a derived alias that is already taken fails the create. After creation it cannot be removed by PATCH. The resource types now report both user extensions as `required: false`, but on 2026-09-30 the live `/Schemas` still reported the attribute itself as `required: true`, so rely on the create behaviour and not on that flag.
 
 **Group `displayName` is not unique.** Entra accepts a duplicate group name and returns 201. RFC-oriented tooling often assumes 409 here, so do not rely on create failing to detect an existing group — filter first.
 
@@ -230,7 +234,7 @@ Things the live API does that the docs either state ambiguously or not at all. E
 
 Two consequences worth knowing. Deleting a user strips their memberships, so the delete-then-remove-membership ordering lands in the same place as any other non-member — confirmed by querying `list_groups` with a `members.value` filter either side of the delete. And the error message names the **group**, not the member (`Resource '<groupId>' does not exist or one of its queried reference-property objects are not present`), which reads oddly since the group plainly exists; a probe with a deliberately bogus group id returned the same sentence naming that id, so the text simply echoes the PATCH target. The mock reproduces all of this rather than improving on it. Re-run it with `npx tsx scripts/probe-member-removal.ts --confirm` (~17 billed calls).
 
-**Group reads never include members.** `get_group` returns no `members` array at any page size. To find a user's groups, filter the other way: `list_groups` with `members.value eq "<userId>"`.
+**Group reads never include members.** `get_group` returns no `members` array at any page size. To list a group's direct members, use `list_users` with `groups.value eq "<groupId>"`, which is the route Microsoft now recommends. To find a user's groups, filter the other way: `list_groups` with `members.value eq "<userId>"`. Ownership works the same way. `owners` and `ownedGroups` are never returned, but `list_groups` accepts `owners.value eq "<userId>"` and `list_users` accepts `ownedGroups.value eq "<groupId>"`.
 
 **Errors are structured, and worth surfacing verbatim.** Failures carry `status`, `scimType` and `detail`, and the `detail` text is unusually specific (it will name the offending operation index and constraint). The tools pass it through unchanged rather than flattening it to a message.
 

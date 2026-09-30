@@ -35,9 +35,9 @@ const BASE_INSTRUCTIONS = `Microsoft Entra ID SCIM 2.0 provisioning. Tools cover
 True of every tool, and not visible in any single tool's schema:
 
 - Ids, not names. Anything addressing one object takes an Entra object id (GUID). Resolve a userName with list_users and a group displayName with list_groups first — and note displayName is not unique, so a name can match several groups.
-- Membership reads one way only. Neither get_user nor get_group returns group membership at any projection. Use list_groups filtered on members.value eq "<userId>".
+- Membership reads one way only. Neither get_user nor get_group returns group membership at any projection. A user's groups: list_groups filtered on members.value eq "<userId>". A group's members: list_users filtered on groups.value eq "<groupId>".
 - Custom Security Attributes are invisible to ordinary reads. get_user never returns them; get_user_custom_security_attributes does, and requires the attribute set name.
-- The filter grammar is far narrower than SCIM's: only "eq" and "ew", only "and", and only on the attributes each tool names. Anything else is rejected before a request is sent.
+- The filter grammar is far narrower than SCIM's: only "eq" and "ew", only "and", "not" only around a user "ew" clause, and only on the attributes each tool names. Boolean attributes (active, securityEnabled, mailEnabled) take "true" or "false". Anything else is rejected before a request is sent.
 - Nothing is transactional across tools. A sequence that fails halfway leaves the earlier writes in place; add_group_members reports exactly which ids landed for that reason.
 - Every call is a billed Microsoft Graph request. Prefer one filtered list over many gets, project with "attributes", and treat the discovery tools (get_service_provider_config, list_resource_types, list_schemas) as static per API version — fetch once and reuse.`;
 

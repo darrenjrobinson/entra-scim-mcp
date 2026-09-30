@@ -14,6 +14,12 @@ export interface StoredGroup extends ScimGroup {
   id: string;
   /** Kept internally; never returned on reads (Entra constraint). */
   members: ScimGroupMember[];
+  /**
+   * Owner user ids. Never returned and not writable over SCIM; the API only
+   * lets you filter on them (owners.value / ownedGroups.value), so the mock
+   * sets them through setGroupOwners.
+   */
+  owners: string[];
 }
 
 export interface SeedData {
@@ -98,6 +104,7 @@ export class MockStore {
     }
     for (const group of this.groups.values()) {
       group.members = group.members.filter((m) => m.value !== id);
+      group.owners = group.owners.filter((o) => o !== id);
     }
     return true;
   }
@@ -110,11 +117,12 @@ export class MockStore {
     }
     const id = randomUUID();
     const now = isoNow();
-    const { members: _ignored, ...rest } = structuredClone(input);
+    const { members: _ignored, owners: _owners, ...rest } = structuredClone(input);
     const group: StoredGroup = {
       ...rest,
       id,
       members: [],
+      owners: [],
       meta: {
         resourceType: "group",
         created: now,
@@ -139,8 +147,10 @@ export class MockStore {
     if (!existing) {
       throw new MockScimError(404, `Group '${updated.id}' not found.`);
     }
-    // Membership changes only go through addGroupMembers/removeGroupMember.
+    // Membership changes only go through addGroupMembers/removeGroupMember,
+    // and owners only through setGroupOwners.
     updated.members = existing.members;
+    updated.owners = existing.owners;
     updated.meta = { ...existing.meta, ...updated.meta, lastModified: isoNow() };
     this.groups.set(updated.id, updated);
   }
@@ -219,6 +229,30 @@ export class MockStore {
     const ids: string[] = [];
     for (const group of this.groups.values()) {
       if (group.members.some((m) => m.value === userId)) ids.push(group.id);
+    }
+    return ids;
+  }
+
+  /**
+   * Replace a group's owners. Mock-only: SCIM offers no way to write owners,
+   * so tests and seeds use this to give the owners.value filters something
+   * to match.
+   */
+  setGroupOwners(groupId: string, userIds: string[]): void {
+    const group = this.requireGroup(groupId);
+    for (const userId of userIds) {
+      if (!this.users.has(userId)) {
+        throw new MockScimError(400, `User '${userId}' does not exist.`, "invalidValue");
+      }
+    }
+    group.owners = [...new Set(userIds)];
+  }
+
+  /** Group ids the user owns (for ownedGroups.value filters). */
+  groupIdsOwnedBy(userId: string): string[] {
+    const ids: string[] = [];
+    for (const group of this.groups.values()) {
+      if (group.owners.includes(userId)) ids.push(group.id);
     }
     return ids;
   }
