@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import { ScimClient } from "./scim/client.js";
 import { registerDiscoveryTools } from "./tools/discovery.js";
 import { registerUserTools } from "./tools/users.js";

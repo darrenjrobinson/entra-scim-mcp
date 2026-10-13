@@ -11,8 +11,7 @@
 import { randomBytes } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { loadAuthFromEnv } from "../src/scim/auth.js";
 import { ScimClient } from "../src/scim/client.js";
 import { createServer } from "../src/server.js";

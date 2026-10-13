@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { TokenCredential, AccessToken } from "@azure/identity";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { ScimClient } from "../src/scim/client.js";
 import { createServer } from "../src/server.js";
 
