@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createRequire } from "node:module";
 import type { TokenCredential, AccessToken } from "@azure/identity";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { PACKAGE_VERSION, createServer } from "../src/server.js";
 
 const packageJson = createRequire(import.meta.url)("../package.json") as {

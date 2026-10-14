@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { loadAuthFromEnv } from "./scim/auth.js";
 import { ScimClient } from "./scim/client.js";
 import { SCIM_BASE_URL } from "./scim/types.js";

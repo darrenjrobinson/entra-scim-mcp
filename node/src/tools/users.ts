@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { ScimClient } from "../scim/client.js";
 import { joinAttributes, wrapTool } from "./util.js";
 import { buildUserFilter } from "../scim/filter.js";
@@ -98,7 +98,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
       title: "List users",
       description:
         "List Entra users via SCIM. Filter supports 'eq' on userName/externalId/id/active/groups.value/mailNickname/ownedGroups.value and 'ew' on userName/mailNickname, with not(...) allowed on 'ew' clauses; only 'and' combines them. Cursor-based pagination. This is also how you resolve a userName to an object id, since every other user tool takes the id, and how you list a group's direct members (groups.value eq \"<groupId>\") — get_group never returns them. Prefer a filter plus a narrow 'attributes' list over listing everything: each page is a separate billed request. An app granted only User.ReadBasic.All can filter on id and userName alone.",
-      inputSchema: {
+      inputSchema: z.object({
         filter: z
           .array(filterClauseSchema)
           .optional()
@@ -132,7 +132,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
           .describe(
             "Pagination cursor from a prior call's nextCursor. Omit for the first page.",
           ),
-      },
+      }),
       annotations: {
         readOnlyHint: true,
         openWorldHint: true,
@@ -168,7 +168,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
       title: "Get user by id",
       description:
         "Fetch a single user by Entra object id. Two things are never in the response, whatever you project: Custom Security Attributes (the schema marks them returned:\"request\" — use get_user_custom_security_attributes) and group memberships (filter list_groups on members.value instead; for the reverse, a group's members, filter list_users on groups.value). To look a user up by userName rather than id, use list_users with an 'eq' filter.",
-      inputSchema: {
+      inputSchema: z.object({
         id: z
           .string()
           .min(1)
@@ -185,7 +185,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
           .describe(
             "Attributes to exclude from the response. Mutually exclusive with attributes.",
           ),
-      },
+      }),
       annotations: {
         readOnlyHint: true,
         openWorldHint: true,
@@ -215,7 +215,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
       title: "Provision user",
       description:
         "Create a user in Entra via SCIM. Enforces the required attribute set: userName, password, displayName, givenName, familyName. mailNickname is optional — omit it and Entra derives it from userName. active defaults to true. Not idempotent — a second call with the same userName fails with a uniqueness conflict, so check with list_users first if a retry might be a duplicate. Group membership is not settable here: create the user, then call add_group_members.",
-      inputSchema: {
+      inputSchema: z.object({
         userName: z
           .string()
           .min(1)
@@ -280,7 +280,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
           .describe(
             "Entra object id of the user's manager. Must be an existing user; a userName is not accepted.",
           ),
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         // Creates only. A duplicate userName is rejected by the API rather than
@@ -368,7 +368,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
       title: "Update user",
       description:
         'PATCH a user with SCIM operations — e.g. { op: "replace", path: "displayName", value: "Ada L" }, or { op: "replace", path: "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:department", value: "R&D" }. Operations are validated before anything is sent: removing mailNickname (or nulling it out) is blocked, because Entra rejects removing it once the user exists, and addresses[...] paths must use exactly [type eq "work"] — the only filter the API accepts there. Other complex multi-valued paths (e.g. emails[type eq "work" and primary eq true].value) are passed through as-is. Not the tool for Custom Security Attributes (use update_user_custom_security_attributes), employeeLeaveDateTime (use update_user_lifecycle), or group membership (use add_group_members / remove_group_member).',
-      inputSchema: {
+      inputSchema: z.object({
         id: z.string().min(1).describe("Entra object id of the user to patch."),
         operations: z
           .array(patchOpSchema(USER_PATH_HINT))
@@ -376,7 +376,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
           .describe(
             "Operations applied in order as a single PATCH — they all succeed or all fail together.",
           ),
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         // "remove" and "replace" both discard whatever was there before, and
@@ -405,14 +405,14 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
       title: "Deprovision user",
       description:
         "DELETE a user by id. The user is soft-deleted into the Entra recycle bin and is restorable for 30 days — but only through Microsoft Graph, not SCIM, so this server cannot undo it. Deleting also strips every group membership, which is why a later remove_group_member for this user returns 404. A second call for the same id returns 404 rather than succeeding quietly.",
-      inputSchema: {
+      inputSchema: z.object({
         id: z
           .string()
           .min(1)
           .describe(
             "Entra object id of the user to delete. Resolve a userName with list_users first — there is no confirmation step.",
           ),
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -435,7 +435,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
       title: "Update user lifecycle",
       description:
         "PATCH lifecycle attributes on a user — currently employeeLeaveDateTime. Not an inert field: Entra Lifecycle Workflows can be scheduled off it, so writing a past or imminent date may start offboarding. Called with no attributes set it changes nothing and returns { noChanges: true } without issuing a request. Requires User-LifeCycleInfo.ReadWrite.All on the app registration, which is separate from the permissions the other tools need.",
-      inputSchema: {
+      inputSchema: z.object({
         id: z.string().min(1).describe("Entra object id of the user."),
         employeeLeaveDateTime: z
           .string()
@@ -443,7 +443,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
           .describe(
             'ISO-8601 datetime in UTC (e.g. "2026-12-31T17:00:00Z"). Omit to leave it unchanged.',
           ),
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         // Overwrites the stored date with no history, and the write can trigger
@@ -481,7 +481,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
       title: "Get user Custom Security Attributes",
       description:
         "Fetch Custom Security Attributes for a user, projected by attribute set. attributeSets is required — the API rejects the bare extension URN with a 400. CSAs never come back from a plain get_user; they are only returned when named explicitly here. A set the user holds no values in comes back empty, which is a valid answer rather than an error. Requires CustomSecAttributeAssignment.Read.All (covered by CustomSecAttributeAssignment.ReadWrite.All).",
-      inputSchema: {
+      inputSchema: z.object({
         id: z.string().min(1).describe("Entra object id of the user."),
         attributeSets: z
           .array(z.string().min(1))
@@ -489,7 +489,7 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
           .describe(
             'Attribute set names to project, e.g. ["Engineering"]. Projection is set-granular: the API documents urn:...:CustomSecurityAttributes:<Set>, not individual attribute names. Set names are defined in the tenant and no SCIM call lists them, so ask rather than guess.',
           ),
-      },
+      }),
       annotations: {
         readOnlyHint: true,
         openWorldHint: true,
@@ -513,13 +513,13 @@ export function registerUserTools(server: McpServer, client: ScimClient): void {
       title: "Update user Custom Security Attributes",
       description:
         'PATCH CustomSecurityAttributes on a user. Set a value with { op: "replace", path: "urn:ietf:params:scim:schemas:extension:Microsoft:Entra:2.0:CustomSecurityAttributes:Engineering.Team", value: "Platform" }. Clear one with op "remove" on the same path, or by replacing a multi-valued attribute with an empty array — both delete the assignment outright. The attribute set and attribute must already exist in the tenant; this cannot define them, and an unknown path is a 400. Read the result back with get_user_custom_security_attributes, not get_user. Requires CustomSecAttributeAssignment.ReadWrite.All.',
-      inputSchema: {
+      inputSchema: z.object({
         id: z.string().min(1).describe("Entra object id of the user."),
         operations: z
           .array(patchOpSchema(CSA_PATH_HINT))
           .min(1)
           .describe("Operations applied in order as a single PATCH."),
-      },
+      }),
       annotations: {
         readOnlyHint: false,
         // "remove", and a "replace" with an empty array, both delete
