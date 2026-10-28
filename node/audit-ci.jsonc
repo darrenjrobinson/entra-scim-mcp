@@ -1,0 +1,16 @@
+// Read by the "Dependency audit" CI job. Fails on high and above, except for
+// the advisories listed here, each of which is a decision someone made.
+{
+  "high": true,
+  "allowlist": [
+    // @azure/msal-node < 7.1.0: the auth_code flow can disclose parameters to
+    // an attacker-controlled endpoint. This server only uses client-credentials
+    // (ClientSecretCredential, ClientCertificateCredential in src/scim/auth.ts)
+    // and never calls acquireTokenByCode. It is not fixable here: every
+    // @azure/identity release, 4.14.0 and 4.15.0-beta.1 included, pins
+    // msal-node ^6.0.0, and an override would not reach installed consumers.
+    // Remove once `npm view @azure/identity dependencies.@azure/msal-node`
+    // allows 7.1.0 or later.
+    "GHSA-xcx6-jx8p-x3h5",
+  ],
+}
