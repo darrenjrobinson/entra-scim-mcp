@@ -98,8 +98,10 @@ jobs:
 
       # The tree was carrying nine advisories before this branch. Fail on high
       # and above so it cannot drift back without someone deciding to let it.
+      # Those decisions live in audit-ci.jsonc, which npm audit has no way to
+      # express.
       - name: npm audit
-        run: npm audit --audit-level=high
+        run: npx --yes audit-ci@7.1.0 --config audit-ci.jsonc
 
   pack:
     name: Verify the published tarball
